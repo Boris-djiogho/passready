@@ -191,7 +191,12 @@ legend { padding: 0; }
 .field textarea { min-height: 5rem; }
 .field input[aria-invalid="true"], .field select[aria-invalid="true"] { border: 2px solid var(--danger); }
 .field-hint { color: var(--ink-2); font-size: 0.85rem; }
-.form-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); align-items: start; }
+.form-grid { display: grid; column-gap: 0.75rem; row-gap: 0.3rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); align-items: start; }
+/* Each field spans three shared rows (label, control, hint), so controls in one row line up
+   even when a label wraps or only some fields carry a hint. */
+.form-grid > .field { grid-template-rows: subgrid; grid-row: span 3; margin-bottom: 0.6rem; }
+.form-grid > .field > label, .form-grid > .field > .label { align-self: end; }
+.form-grid > .field-hint { grid-column: 1 / -1; margin-bottom: 0.6rem; }
 .check { display: flex; align-items: center; gap: 0.6rem; min-height: var(--control); cursor: pointer; }
 .check input { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); margin: 0; flex: none; }
 .subform { padding: 1rem 0; border-top: 1px dashed var(--hair-strong); display: grid; gap: 0.75rem; }
