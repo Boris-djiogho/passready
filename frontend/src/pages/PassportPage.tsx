@@ -141,7 +141,7 @@ function PassHeader({ view }: { view: PassportView }) {
   const product = view.product;
   const brandName = view.role === "consumer" ? view.brand.name : view.brand_name;
   const country = view.role === "consumer" ? view.product.country_of_origin : null;
-  const image = view.role === "consumer" ? view.product.image_urls[0] : undefined;
+  const images = view.role === "consumer" ? view.product.image_urls : [];
   const published = view.status === "published";
   return (
     <header className="pass-head">
@@ -150,7 +150,7 @@ function PassHeader({ view }: { view: PassportView }) {
         {brandName} · {CATEGORY_LABELS[product.category]}
         {country ? ` · hergestellt in ${countryName(country)}` : ""}
       </p>
-      {image && <HeroImage src={image} alt="" />}
+      {images.length > 0 && <Gallery images={images} name={product.name} />}
       <dl className="facts">
         <dt>GTIN</dt>
         <dd><code>{identifier.gtin}</code></dd>
@@ -169,10 +169,34 @@ function PassHeader({ view }: { view: PassportView }) {
   );
 }
 
-function HeroImage({ src, alt }: { src: string; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return null;
-  return <img className="pass-image" src={src} alt={alt} onError={() => setFailed(true)} />;
+function Gallery({ images, name }: { images: string[]; name: string }) {
+  const [index, setIndex] = useState(0);
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const available = images.filter((url) => !failed.has(url));
+  if (available.length === 0) return null;
+  const current = available[Math.min(index, available.length - 1)];
+  const position = available.indexOf(current) + 1;
+  return (
+    <figure className="gallery">
+      <img
+        className="pass-image"
+        src={current}
+        alt={`Produktbild ${position} von ${available.length}: ${name}`}
+        onError={() => setFailed((previous) => new Set(previous).add(current))}
+      />
+      {available.length > 1 && (
+        <ul className="gallery-thumbs" aria-label="Weitere Produktbilder">
+          {available.map((url, i) => (
+            <li key={url}>
+              <button type="button" aria-pressed={url === current} aria-label={`Bild ${i + 1} anzeigen`} onClick={() => setIndex(i)}>
+                <img src={url} alt="" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </figure>
+  );
 }
 
 function Section({ num, title, id, children }: { num: string; title: string; id: string; children: ReactNode }) {

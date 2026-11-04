@@ -66,9 +66,30 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   (Brand: anlegen, einladen, veröffentlichen), `completeness.py` (Pflichtfeld-Regeln
   mit Rechtsgrundlage), `chemistry.py` (Screening gegen Demo-Auszug SVHC/PFAS), `seed.py`.
 - `app/routers/`: `resolver.py` (`/01/{gtin}[/10/{batch}][/21/{serial}]`,
-  `/.well-known/gs1resolver`), `supplier.py` (`POST /api/dpp/{gtin}/supplier-update`,
+  `/.well-known/gs1resolver`), `qr.py` (`GET /api/qr/01/{gtin}[/10/{batch}]`, öffentlich,
+  SVG/PNG, Header `X-Digital-Link`), `supplier.py` (`POST /api/dpp/{gtin}/supplier-update`,
   ohne Brand-Key, Token im Header `X-Supplier-Token`), `dpp.py` (Brand-API, Header
-  `X-API-Key`), `health.py`.
+  `X-API-Key`, inkl. `POST /api/dpp/{gtin}/images`), `health.py`.
+- QR-Code (`services/qr.py`, segno): kodiert ausschließlich den GS1 Digital Link mit
+  `resolver_base_url`, Fehlerkorrektur M, Ruhezone 4 Module. Die Domain im Code muss die
+  Produktiv-Resolver-Domain sein; für einen Handy-Test im LAN `PASSREADY_RESOLVER_BASE_URL`
+  auf `http://<LAN-IP>:8000` und `PASSREADY_LANDING_PAGE_BASE_URL` auf
+  `http://<LAN-IP>:5173` setzen und Vite mit `--host 0.0.0.0` starten.
+- Produktbilder (`services/media.py`): Magic-Bytes-Prüfung (JPEG/PNG/WebP), 5 MB, höchstens
+  8 Bilder, Ablage unter `PASSREADY_MEDIA_DIR` (gitignored), Auslieferung unter
+  `/media/uploads`, öffentliche URL aus `PASSREADY_MEDIA_BASE_URL`. Demo-Illustrationen
+  liegen in `app/static/demo/` und werden unter `/media/demo` serviert.
+  Reihenfolge und Löschen über `PUT /api/dpp/{gtin}/images` (erstes Bild = Hauptbild im
+  Pass, weggelassene Uploads werden von der Platte entfernt).
+- Lieferanten-Erinnerungen (`services/reminders.py`): `POST /api/dpp/{gtin}/suppliers/{id}/remind`
+  komponiert eine deutsche Mail mit Lückenliste und Portal-Link (`PASSREADY_PORTAL_BASE_URL`),
+  übergibt sie an einen `Notifier`. Im MVP ist das der `OutboxNotifier` (nur gespeichert,
+  `GET /api/dpp/{gtin}/outbox`), produktiv SMTP/Provider dahinter stecken.
+  `GET /api/dpp/{gtin}/suppliers` liefert Wartezeit, offenen Link und `reminder_due`
+  (nach `PASSREADY_REMINDER_INTERVAL_DAYS`, Standard 7). Automatischer Versand per Cron ist
+  offen; die Fälligkeit ist bereits berechnet.
+- Pass anlegen im Dashboard: `components/NewPassportForm.tsx` übernimmt den Betreiber aus
+  dem ersten vorhandenen Pass (`<details>` zum Ändern); CSV-Import ist offen.
 - `frontend/src/`: `api/client.ts` (typisierter Fetch-Client, `ApiError` mit
   `issues`/`missing`), `lib/labels.ts` (deutsche Labels je Enum als `Record`, bricht den
   Build bei neuen Enum-Werten), `pages/PassportPage.tsx` (Routen `/01/...` wie der GS1
@@ -101,6 +122,8 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   `app/services/seed.py` importieren, nicht hart kodieren.
 - E-Mail-Adressen in Seeds/Tests auf `*.example.org` (email-validator lehnt die
   TLD `.example` ab); https-URLs dürfen `.example` nutzen.
+- `HttpsUrl` erlaubt `http://` nur für `localhost`/`127.0.0.1` (Medien im Dev-Backend);
+  alles andere bleibt https-only.
 - Frontend: Felder mit Default sind im generierten Typ Pflicht (`verified`, `public`,
   `recycled_percentage`), Felder mit `default_factory` optional (`suppliers`,
   `contributions`); beim Rendern `?? []`. Lange Strings (Digital Link) brauchen
@@ -127,19 +150,21 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
 - Ländercodes nie roh anzeigen: `countryName()` (Intl.DisplayNames, de) in `lib/a11y.ts`.
 
 ## Stand
-v0.3.0 (2026-11-04): Backend-MVP (A: Pydantic-DPP-Schema Textil, B: Resolver mit
+v0.5.0 (2026-11-05): Backend-MVP (A: Pydantic-DPP-Schema Textil, B: Resolver mit
 Rollen-Routing, Fallback, Linkset, JSON-LD, Scan-Zählung, C: Supplier-Update mit Tokens,
 Abschnittsrechten, Audit-Trail; Brand-API mit Completeness, Chemie-Check, Publish; CORS)
 plus Frontend im editorialen Design (Referenz Arianee): Pass-Ansicht (Ziel des QR-Codes,
 Tabs Kundinnen/Recycler, Kompositionsbalken, Fallback- und Sperr-Zustände),
 Lieferantenformular per Token-Link (Fieldsets, Fehlerzusammenfassung), Label-Dashboard
-(Artikel, Vollständigkeit mit Progressbar, Einladen mit Link, Chemie-Check, Publish,
-Protokoll). WCAG 2.2 AA: axe-core null Verstöße auf allen Seiten, Kontraste gerechnet,
+(Artikel anlegen, Produktbilder mit Upload, Hauptbild und Löschen, Vollständigkeit mit
+Progressbar, Lieferanten mit Wartezeit, Erinnerung fällig und Erinnern (Postausgang), Einladen
+mit Link, QR-Code für das Etikett mit SVG/PNG-Download, Chemie-Check automatisch, Publish,
+Protokoll). Pass-Ansicht zeigt alle Bilder als Galerie. WCAG 2.2 AA: axe-core null Verstöße auf allen Seiten, Kontraste gerechnet,
 Tastaturbedienung geprüft. Kompletter Ablauf Weberei -> Färberei -> Dashboard -> Publish
--> Verbraucher-Pass im Browser verifiziert. Backend 48 Tests, ruff, mypy strict grün;
+-> Verbraucher-Pass im Browser verifiziert. Backend 59 Tests, ruff, mypy strict grün;
 Frontend tsc und vite build grün. Seed: T-Shirt `04012345678901` (Modell + Charge
 `LOT2026A`, veröffentlicht), Denim-Jacke `04012345000016` (wartet auf Weberei/Färberei,
 Tokens `demo-token-weaving-2026`, `demo-token-dyeing-2026`). Offen: PostgreSQL-
-Repository, echte Auth (JWT/OAuth2), QR-Code-Export, Versionsabruf-API (prEN 18222),
-EU-Registry-Anbindung (ESPR Art. 12), ECHA-Kandidatenliste als Import, Pass-Anlage im
-Dashboard, Frontend-Tests (axe in CI), Deployment.
+Repository, echte Auth (JWT/OAuth2), Versionsabruf-API (prEN 18222),
+EU-Registry-Anbindung (ESPR Art. 12), ECHA-Kandidatenliste als Import, echter Mailversand
+(SMTP) plus Cron für fällige Erinnerungen, CSV-Import, Frontend-Tests (axe in CI), Deployment.

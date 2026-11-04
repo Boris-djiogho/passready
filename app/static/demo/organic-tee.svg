@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="t">
+  <title id="t">Illustration eines T-Shirts</title>
+  <rect width="800" height="600" fill="#f2f3ee"/>
+  <g fill="#fcfcfa" stroke="#14181b" stroke-width="7" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M292 150 L352 118 Q400 162 448 118 L508 150 L600 206 L556 290 L512 268 L512 478 L288 478 L288 268 L244 290 L200 206 Z"/>
+    <path d="M352 118 Q400 190 448 118" fill="none"/>
+    <path d="M362 126 Q400 176 438 126" fill="none" stroke-width="4"/>
+  </g>
+  <g fill="none" stroke="#14181b" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round">
+    <path d="M300 468 L500 468"/>
+    <path d="M256 282 L300 262"/>
+    <path d="M544 282 L500 262"/>
+  </g>
+  <rect x="384" y="196" width="32" height="18" rx="2" fill="none" stroke="#0c5f4b" stroke-width="3"/>
+</svg>

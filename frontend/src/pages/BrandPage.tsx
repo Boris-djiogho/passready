@@ -1,4 +1,5 @@
-/** Brand dashboard: passports with completeness, supplier invitations, chemistry check, publish. */
+/** Brand dashboard: passports with completeness, images, suppliers and reminders, QR code,
+ * chemistry check, publishing, change log, and creating new passports. */
 
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -11,16 +12,21 @@ import {
   type DigitalProductPassport,
   type MissingField,
   type PassportSummary,
+  type ReminderResponse,
   type ScanSummary,
   type SupplierInviteResponse,
   type SupplierRole,
+  type SupplierStatus,
   brandApi,
   digitalLinkPath,
+  qrUrl,
 } from "../api/client";
+import { NewPassportForm } from "../components/NewPassportForm";
 import { countryName, usePageTitle } from "../lib/a11y";
 import { ROLE_LABELS, STATUS_LABELS, formatDate, missingLabel, responsibleLabel } from "../lib/labels";
 
 const STORAGE_KEY = "passready.brandApiKey";
+const CHEMISTRY_ROLES: SupplierRole[] = ["dyeing", "finishing", "trim_supplier"];
 
 function readStoredKey(): string {
   try {
@@ -37,19 +43,22 @@ export function BrandPage() {
   const [passports, setPassports] = useState<PassportSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<PassportSummary | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const api = apiKey ? brandApi(apiKey) : null;
 
-  const load = useCallback(async () => {
-    if (!api) return;
+  const load = useCallback(async (): Promise<PassportSummary[]> => {
+    if (!api) return [];
     setError(null);
     try {
       const list = await api.list();
       setPassports(list);
       setSelected((current) => (current ? list.find((p) => p.dpp_id === current.dpp_id) ?? list[0] ?? null : list[0] ?? null));
+      return list;
     } catch (caught) {
       setPassports(null);
       setError(caught instanceof ApiError && caught.status === 401 ? "Der API-Key wird nicht akzeptiert." : String(caught));
+      return [];
     }
   }, [apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -70,6 +79,13 @@ export function BrandPage() {
   const saveKey = (event: FormEvent) => {
     event.preventDefault();
     applyKey(draftKey);
+  };
+
+  const onCreated = async (created: DigitalProductPassport) => {
+    const list = await load();
+    const entry = list.find((p) => p.dpp_id === created.identifier.dpp_id) ?? null;
+    setSelected(entry);
+    setCreating(false);
   };
 
   return (
@@ -95,11 +111,21 @@ export function BrandPage() {
       {api && passports && (
         <div className="cols">
           <aside aria-labelledby="h-articles">
-            <h2 id="h-articles" className="eyebrow" style={{ marginBottom: "0.5rem" }}>Artikel</h2>
+            <div className="row between" style={{ marginBottom: "0.5rem" }}>
+              <h2 id="h-articles" className="eyebrow">Artikel</h2>
+              <button type="button" className="btn btn-quiet btn-small" onClick={() => setCreating(true)} aria-pressed={creating}>Neuer Artikel</button>
+            </div>
             <ul className="link-list">
               {passports.map((passport) => (
                 <li key={passport.dpp_id}>
-                  <button type="button" aria-current={selected?.dpp_id === passport.dpp_id ? "true" : undefined} onClick={() => setSelected(passport)}>
+                  <button
+                    type="button"
+                    aria-current={!creating && selected?.dpp_id === passport.dpp_id ? "true" : undefined}
+                    onClick={() => {
+                      setCreating(false);
+                      setSelected(passport);
+                    }}
+                  >
                     <span>
                       <span className="link-title">{passport.product_name}</span>
                       <span className="link-meta">
@@ -110,9 +136,14 @@ export function BrandPage() {
                   </button>
                 </li>
               ))}
+              {passports.length === 0 && <li className="muted" style={{ padding: "0.9rem 0" }}>Noch kein Artikel angelegt.</li>}
             </ul>
           </aside>
-          {selected && <PassportDetail key={selected.dpp_id} api={api} summary={selected} onChanged={load} />}
+          {creating ? (
+            <NewPassportForm api={api} template={passports[0] ?? null} onCreated={onCreated} onCancel={() => setCreating(false)} />
+          ) : (
+            selected && <PassportDetail key={selected.dpp_id} api={api} summary={selected} onChanged={load} />
+          )}
         </div>
       )}
     </main>
@@ -137,44 +168,85 @@ function Section({ num, title, id, actions, children }: { num: string; title: st
   );
 }
 
-function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: PassportSummary; onChanged: () => Promise<void> }) {
+function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: PassportSummary; onChanged: () => Promise<PassportSummary[]> }) {
   const { gtin, batch, serial } = summary;
   const [passport, setPassport] = useState<DigitalProductPassport | null>(null);
   const [report, setReport] = useState<CompletenessReport | null>(null);
   const [scans, setScans] = useState<ScanSummary | null>(null);
+  const [statuses, setStatuses] = useState<SupplierStatus[]>([]);
   const [chemistry, setChemistry] = useState<ChemistryScreeningResult | null>(null);
-  const [chemistryError, setChemistryError] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<{ message: string; missing: MissingField[] } | null>(null);
   const [publishedNow, setPublishedNow] = useState(false);
   const [invite, setInvite] = useState<SupplierInviteResponse | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [reminder, setReminder] = useState<ReminderResponse | null>(null);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [qr, setQr] = useState<{ objectUrl: string; link: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [p, r, s] = await Promise.all([api.get(gtin, batch, serial), api.completeness(gtin, batch, serial), api.scans(gtin)]);
+    const [p, r, s, st] = await Promise.all([
+      api.get(gtin, batch, serial),
+      api.completeness(gtin, batch, serial),
+      api.scans(gtin),
+      api.supplierStatuses(gtin, batch, serial),
+    ]);
     setPassport(p);
     setReport(r);
     setScans(s);
+    setStatuses(st);
+    if (p.chemical_compliance) {
+      try {
+        setChemistry(await api.chemistryCheck(gtin, batch, serial));
+      } catch {
+        setChemistry(null);
+      }
+    } else {
+      setChemistry(null);
+    }
   }, [api, gtin, batch, serial]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const runChemistry = async () => {
-    setChemistryError(null);
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    fetch(qrUrl(gtin, batch, serial, "svg"))
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`QR-Code konnte nicht geladen werden (${response.status})`);
+        const link = response.headers.get("X-Digital-Link") ?? "";
+        objectUrl = URL.createObjectURL(await response.blob());
+        if (!cancelled) setQr({ objectUrl, link });
+      })
+      .catch(() => {
+        if (!cancelled) setQr(null);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [gtin, batch, serial]);
+
+  const run = async (action: () => Promise<void>, onError: (message: string) => void) => {
+    setBusy(true);
     try {
-      setChemistry(await api.chemistryCheck(gtin, batch, serial));
+      await action();
     } catch (caught) {
-      setChemistry(null);
-      setChemistryError(caught instanceof ApiError ? String(caught.detail) : String(caught));
+      onError(caught instanceof ApiError ? (typeof caught.detail === "string" ? caught.detail : "Die Angaben wurden nicht akzeptiert.") : String(caught));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const publish = async () => {
-    setBusy(true);
+  const onPublishClick = async () => {
     setPublishError(null);
+    setBusy(true);
     try {
       await api.publish(gtin, batch, serial);
       setPublishedNow(true);
@@ -193,36 +265,74 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
     const form = event.currentTarget;
     const data = new FormData(form);
     setInviteError(null);
-    setCopied(false);
-    setBusy(true);
-    try {
-      const response = await api.invite(gtin, {
-        supplier: {
-          name: String(data.get("name") ?? ""),
-          role: String(data.get("role")) as SupplierRole,
-          tier: Number(data.get("tier") ?? 1),
-          country: String(data.get("country") ?? "").toUpperCase(),
-          data_status: "pending",
-        },
-        batch,
-        serial,
-      });
-      setInvite(response);
-      form.reset();
+    await run(
+      async () => {
+        const response = await api.invite(gtin, {
+          supplier: {
+            name: String(data.get("name") ?? ""),
+            role: String(data.get("role")) as SupplierRole,
+            tier: Number(data.get("tier") ?? 1),
+            country: String(data.get("country") ?? "").toUpperCase(),
+            contact_email: String(data.get("email") ?? "").trim() || null,
+            data_status: "pending",
+            reminder_count: 0,
+          },
+          batch,
+          serial,
+        });
+        setInvite(response);
+        form.reset();
+        await refresh();
+      },
+      setInviteError,
+    );
+  };
+
+  const onRemind = async (supplierId: string) => {
+    setReminderError(null);
+    setReminder(null);
+    await run(
+      async () => {
+        setReminder(await api.remind(gtin, supplierId, null, batch, serial));
+        await refresh();
+      },
+      setReminderError,
+    );
+  };
+
+  const onUpload = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const input = form.elements.namedItem("image") as HTMLInputElement | null;
+    const file = input?.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploadMessage(null);
+    await run(
+      async () => {
+        const response = await api.uploadImage(gtin, file, batch, serial);
+        setUploadMessage(`Bild gespeichert. Der Pass hat jetzt ${response.image_urls.length} Produktbild${response.image_urls.length === 1 ? "" : "er"}; das erste erscheint im Pass zuerst.`);
+        form.reset();
+        await refresh();
+      },
+      setUploadError,
+    );
+  };
+
+  const setImages = async (urls: string[]) => {
+    setImageError(null);
+    await run(async () => {
+      await api.setImages(gtin, urls, batch, serial);
       await refresh();
-    } catch (caught) {
-      setInviteError(caught instanceof ApiError ? (typeof caught.detail === "string" ? caught.detail : "Die Angaben zum Lieferanten sind unvollständig.") : String(caught));
-    } finally {
-      setBusy(false);
-    }
+    }, setImageError);
   };
 
   const copyLink = async (link: string) => {
     try {
       await navigator.clipboard.writeText(link);
-      setCopied(true);
+      setCopiedLink(link);
     } catch {
-      setCopied(false);
+      setCopiedLink(null);
     }
   };
 
@@ -230,7 +340,9 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
 
   const suppliers = passport.suppliers ?? [];
   const contributions = passport.contributions ?? [];
-  const supplierLink = invite ? `${window.location.origin}/supplier/${gtin}?token=${invite.token}` : null;
+  const imageUrls = passport.product.image_urls ?? [];
+  const inviteLink = invite ? `${window.location.origin}/supplier/${gtin}?token=${invite.token}` : null;
+  const pendingChemistrySuppliers = statuses.filter((s) => CHEMISTRY_ROLES.includes(s.supplier.role) && s.supplier.data_status === "pending");
 
   return (
     <article aria-labelledby="detail-title">
@@ -251,7 +363,42 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
         )}
       </header>
 
-      <Section num="01" title="Vollständigkeit" id="completeness">
+      <Section num="01" title="Produktbilder" id="images">
+        {imageUrls.length === 0 ? (
+          <p className="muted">Noch kein Bild. Das erste Bild erscheint oben im Pass, weitere als Galerie.</p>
+        ) : (
+          <ul className="thumbs" aria-label="Produktbilder">
+            {imageUrls.map((url, index) => (
+              <li key={url}>
+                <img src={url} alt={`Produktbild ${index + 1} von ${passport.product.name}`} />
+                {index === 0 ? <span className="main-tag">Hauptbild</span> : <span className="main-tag">Bild {index + 1}</span>}
+                <span className="thumb-actions">
+                  {index > 0 && (
+                    <button type="button" className="btn btn-quiet btn-small" disabled={busy} onClick={() => void setImages([url, ...imageUrls.filter((u) => u !== url)])}>
+                      Als Hauptbild
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-quiet btn-small" disabled={busy} aria-label={`Bild ${index + 1} entfernen`} onClick={() => void setImages(imageUrls.filter((u) => u !== url))}>
+                    Entfernen
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form className="upload-row" onSubmit={onUpload}>
+          <div className="field">
+            <label htmlFor="image-file">Produktbild hinzufügen</label>
+            <input id="image-file" name="image" type="file" accept="image/jpeg,image/png,image/webp" required aria-describedby="image-hint" />
+            <span className="field-hint" id="image-hint">JPEG, PNG oder WebP, höchstens 5 MB. Neue Bilder landen hinten; mit „Als Hauptbild" nach vorn holen.</span>
+          </div>
+          <button className="btn btn-quiet" type="submit" disabled={busy}>Hochladen</button>
+        </form>
+        {uploadMessage && <p role="status" className="notice notice-ok" style={{ marginTop: "0.75rem" }}>{uploadMessage}</p>}
+        {(uploadError || imageError) && <p role="alert" className="notice notice-danger" style={{ marginTop: "0.75rem" }}>{uploadError ?? imageError}</p>}
+      </Section>
+
+      <Section num="02" title="Vollständigkeit" id="completeness">
         <p>
           <span className={`status ${report.complete ? "status-ok" : "status-warn"}`}>
             {report.complete ? "Alle Pflichtangaben liegen vor" : `${report.missing.length} Pflichtangabe${report.missing.length === 1 ? "" : "n"} offen`}
@@ -284,30 +431,83 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
         )}
       </Section>
 
-      <Section num="02" title="Lieferanten" id="suppliers">
+      <Section num="03" title="Lieferanten" id="suppliers">
         {suppliers.length === 0 ? (
-          <p className="muted">Noch keine Lieferanten hinterlegt.</p>
+          <p className="muted">Noch keine Lieferanten hinterlegt. Laden Sie unten Weberei, Färberei oder Konfektion ein.</p>
         ) : (
           <div className="table-wrap">
             <table className="table">
-              <caption>Beteiligte Betriebe und Stand ihrer Daten</caption>
-              <thead><tr><th scope="col">Betrieb</th><th scope="col">Rolle</th><th scope="col">Tier</th><th scope="col">Land</th><th scope="col">Daten</th></tr></thead>
+              <caption>Beteiligte Betriebe, Stand ihrer Daten und Erinnerungen</caption>
+              <thead>
+                <tr><th scope="col">Betrieb</th><th scope="col">Rolle</th><th scope="col">Daten</th><th scope="col">Einladung</th><th scope="col">Aktion</th></tr>
+              </thead>
               <tbody>
-                {suppliers.map((supplier) => (
+                {statuses.map(({ supplier, days_waiting, reminder_due, invitation_valid_until, portal_link }) => (
                   <tr key={supplier.supplier_id}>
-                    <td>{supplier.name}</td>
-                    <td>{ROLE_LABELS[supplier.role]}</td>
-                    <td>{supplier.tier}</td>
-                    <td>{countryName(supplier.country)}</td>
                     <td>
-                      <span className={`status ${supplier.data_status === "pending" ? "status-warn" : "status-ok"}`}>
-                        {supplier.data_status === "pending" ? "ausstehend" : supplier.data_status === "submitted" ? "geliefert" : "geprüft"}
+                      {supplier.name}
+                      <br />
+                      <span className="small muted">Tier {supplier.tier} · {countryName(supplier.country)}{supplier.contact_email ? ` · ${supplier.contact_email}` : " · keine E-Mail"}</span>
+                    </td>
+                    <td>{ROLE_LABELS[supplier.role]}</td>
+                    <td>
+                      {supplier.data_status === "pending" ? (
+                        <>
+                          <span className={`status ${reminder_due ? "status-danger" : "status-warn"}`}>
+                            {reminder_due ? "Erinnerung fällig" : "ausstehend"}
+                          </span>
+                          <br />
+                          <span className="small muted">
+                            wartet seit {days_waiting} Tag{days_waiting === 1 ? "" : "en"}
+                            {supplier.last_reminded_at ? `, zuletzt erinnert am ${formatDate(supplier.last_reminded_at)} (${supplier.reminder_count}×)` : ""}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="status status-ok">{supplier.data_status === "submitted" ? "geliefert" : "geprüft"}</span>
+                      )}
+                    </td>
+                    <td>
+                      {invitation_valid_until ? (
+                        <span className="small">gültig bis {formatDate(invitation_valid_until)}</span>
+                      ) : (
+                        <span className="small muted">{supplier.data_status === "pending" ? "kein offener Link" : "–"}</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className="cell-actions">
+                        {supplier.data_status === "pending" && (
+                          <button type="button" className="btn btn-small" disabled={busy} onClick={() => void onRemind(supplier.supplier_id ?? "")}>
+                            {supplier.reminder_count > 0 ? "Erneut erinnern" : "Erinnern"}
+                          </button>
+                        )}
+                        {portal_link && (
+                          <button type="button" className="btn btn-quiet btn-small" onClick={() => void copyLink(portal_link)} aria-label={`Einladungslink für ${supplier.name} kopieren`}>
+                            {copiedLink === portal_link ? "Kopiert" : "Link kopieren"}
+                          </button>
+                        )}
                       </span>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {reminderError && <p role="alert" className="notice notice-danger" style={{ marginTop: "0.75rem" }}>{reminderError}</p>}
+        {reminder && (
+          <div role="status" className="notice notice-ok" style={{ marginTop: "0.75rem" }}>
+            <strong>Erinnerung an {reminder.supplier_name} vorbereitet ({reminder.reminder_count}. Erinnerung)</strong>
+            {reminder.warnings.length > 0 && <ul>{reminder.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+            <p className="small" style={{ marginTop: "0.5rem" }}>Betreff: {reminder.message.subject}</p>
+            <pre className="mail">{reminder.message.body}</pre>
+            <div className="btn-row" style={{ marginTop: "0.75rem" }}>
+              <button type="button" className="btn btn-quiet btn-small" onClick={() => void copyLink(reminder.message.body)}>
+                {copiedLink === reminder.message.body ? "Text kopiert" : "Text kopieren"}
+              </button>
+              <button type="button" className="btn btn-quiet btn-small" onClick={() => void copyLink(reminder.portal_link)}>
+                {copiedLink === reminder.portal_link ? "Link kopiert" : "Link kopieren"}
+              </button>
+            </div>
           </div>
         )}
         <form onSubmit={onInvite} style={{ marginTop: "1.25rem" }}>
@@ -323,18 +523,19 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
               </div>
               <div className="field"><label htmlFor="inv-tier">Tier</label><input id="inv-tier" name="tier" type="number" inputMode="numeric" min={1} max={4} defaultValue={2} aria-describedby="tier-hint" /><span className="field-hint" id="tier-hint">1 = direkter Lieferant</span></div>
               <div className="field"><label htmlFor="inv-country">Land</label><input id="inv-country" name="country" maxLength={2} required autoCapitalize="characters" aria-describedby="country-hint" /><span className="field-hint" id="country-hint">Zwei Buchstaben, zum Beispiel PT</span></div>
+              <div className="field"><label htmlFor="inv-email">E-Mail für Erinnerungen</label><input id="inv-email" name="email" type="email" autoComplete="off" /></div>
             </div>
             <div className="btn-row" style={{ marginTop: "0.75rem" }}>
               <button className="btn" type="submit" disabled={busy}>Einladungslink erzeugen</button>
             </div>
           </fieldset>
           {inviteError && <p role="alert" className="notice notice-danger" style={{ marginTop: "0.75rem" }}>{inviteError}</p>}
-          {invite && supplierLink && (
+          {invite && inviteLink && (
             <div role="status" className="notice notice-ok" style={{ marginTop: "0.75rem" }}>
               <strong>Link für {ROLE_LABELS[invite.supplier_role]}, gültig bis {formatDate(invite.expires_at)}</strong>
-              <code>{supplierLink}</code>
+              <code>{inviteLink}</code>
               <div className="btn-row" style={{ marginTop: "0.75rem" }}>
-                <button type="button" className="btn btn-quiet btn-small" onClick={() => void copyLink(supplierLink)}>{copied ? "Link kopiert" : "Link kopieren"}</button>
+                <button type="button" className="btn btn-quiet btn-small" onClick={() => void copyLink(inviteLink)}>{copiedLink === inviteLink ? "Link kopiert" : "Link kopieren"}</button>
                 <Link className="btn btn-quiet btn-small" to={`/supplier/${gtin}?token=${invite.token}`}>Formular öffnen</Link>
               </div>
             </div>
@@ -342,14 +543,45 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
         </form>
       </Section>
 
+      <Section num="04" title="QR-Code für das Etikett" id="qr">
+        <figure className="qr-figure">
+          {qr ? (
+            <img src={qr.objectUrl} alt={`QR-Code, führt zu ${qr.link}`} width={176} height={176} />
+          ) : (
+            <p role="status" className="muted">QR-Code wird erzeugt …</p>
+          )}
+          <figcaption>
+            <span>Der Code enthält nur die GS1-Digital-Link-Adresse des Passes. Derselbe Code ist an der Kasse als GTIN lesbar und führt auf dem Handy zum Pass.</span>
+            {qr?.link && <code>{qr.link}</code>}
+            <span className="muted">Fehlerkorrektur M, Ruhezone von vier Modulen ist enthalten. Im Druck mindestens 15 mm Kantenlänge.</span>
+            <span className="btn-row">
+              <a className="btn btn-quiet btn-small" href={qrUrl(gtin, batch, serial, "svg", { download: true })} download>SVG für den Druck</a>
+              <a className="btn btn-quiet btn-small" href={qrUrl(gtin, batch, serial, "png", { download: true, scale: 12 })} download>PNG</a>
+            </span>
+          </figcaption>
+        </figure>
+      </Section>
+
       <Section
-        num="03"
+        num="05"
         title="Chemie-Check"
         id="chemistry"
-        actions={<button className="btn btn-quiet btn-small" type="button" onClick={() => void runChemistry()}>Jetzt prüfen</button>}
+        actions={passport.chemical_compliance ? <button className="btn btn-quiet btn-small" type="button" onClick={() => void refresh()}>Erneut prüfen</button> : undefined}
       >
-        <p className="small muted">Abgleich der gemeldeten Stoffe mit der REACH-Kandidatenliste und der PFAS-Beschränkung.</p>
-        {chemistryError && <p role="status" className="notice notice-warn" style={{ marginTop: "0.75rem" }}>{chemistryError}</p>}
+        <p className="small muted">Abgleich der gemeldeten Stoffe mit der REACH-Kandidatenliste und der PFAS-Beschränkung. Läuft automatisch, sobald Chemiedaten vorliegen.</p>
+        {!passport.chemical_compliance && (
+          <div className="notice notice-warn" style={{ marginTop: "0.75rem" }}>
+            <strong>Noch keine Chemiedaten</strong>
+            {pendingChemistrySuppliers.length > 0 ? (
+              <>
+                Zuständig: {pendingChemistrySuppliers.map((s) => `${s.supplier.name} (${ROLE_LABELS[s.supplier.role]})`).join(", ")}. Die Erklärung steht noch aus;{" "}
+                <a href="#h-suppliers">in der Lieferantenliste erinnern</a>.
+              </>
+            ) : (
+              <>Laden Sie Färberei oder Ausrüstung als Lieferant ein; sie liefern die REACH- und PFAS-Erklärung.</>
+            )}
+          </div>
+        )}
         {chemistry && (
           <div role="status" className="stack" style={{ marginTop: "0.75rem" }}>
             <ul className="status-list">
@@ -383,15 +615,15 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
               </div>
             )}
             {chemistry.notes.length > 0 && <ul style={{ paddingLeft: "1.2rem" }} className="small">{chemistry.notes.map((note) => <li key={note} lang="en">{note}</li>)}</ul>}
-            {chemistry.findings.length === 0 && chemistry.notes.length === 0 && <p className="small muted">Keine Treffer in den Referenzlisten.</p>}
+            {chemistry.findings.length === 0 && chemistry.notes.length === 0 && <p className="small muted">Keine Treffer in den Referenzlisten. Die gemeldeten Stoffe und die PFAS-Angabe passen zusammen.</p>}
           </div>
         )}
       </Section>
 
-      <Section num="04" title="Veröffentlichen" id="publish">
+      <Section num="06" title="Veröffentlichen" id="publish">
         <p className="small muted">Erst wenn alle Pflichtangaben vorliegen, wird der Pass über den QR-Code erreichbar.</p>
         <div className="btn-row" style={{ marginTop: "0.75rem" }}>
-          <button className="btn btn-primary" type="button" onClick={() => void publish()} disabled={busy || passport.status === "published" || passport.status === "withdrawn"} aria-busy={busy}>
+          <button className="btn btn-primary" type="button" onClick={() => void onPublishClick()} disabled={busy || passport.status === "published" || passport.status === "withdrawn"} aria-busy={busy}>
             {passport.status === "published" ? "Bereits veröffentlicht" : "Jetzt veröffentlichen"}
           </button>
         </div>
@@ -405,14 +637,14 @@ function PassportDetail({ api, summary, onChanged }: { api: BrandApi; summary: P
         )}
       </Section>
 
-      <Section num="05" title="Änderungsprotokoll" id="log">
+      <Section num="07" title="Änderungsprotokoll" id="log">
         <div className="table-wrap">
           <table className="table">
             <caption>Wer wann welche Abschnitte geändert hat</caption>
             <thead><tr><th scope="col">Datum</th><th scope="col">Wer</th><th scope="col">Abschnitte</th></tr></thead>
             <tbody>
               {[...contributions].reverse().map((entry, index) => (
-                <tr key={entry.contribution_id ?? index}>
+                <tr key={entry.contribution_id ?? String(index)}>
                   <td>{formatDate(entry.created_at)}</td>
                   <td>{entry.actor_type === "supplier" ? suppliers.find((s) => s.supplier_id === entry.actor_id)?.name ?? entry.actor_id : entry.actor_type === "brand" ? "Label" : "PassReady"}</td>
                   <td>{entry.sections.join(", ")}{entry.note ? <><br /><span className="small muted">{entry.note}</span></> : null}</td>

@@ -78,6 +78,7 @@ def test_certificate_dates_and_https_only():
         )
     with pytest.raises(ValidationError, match="https"):
         Certificate(type=CertificateType.GOTS, issuer="CU", url="http://insecure.example/cert")
+    Certificate(type=CertificateType.GOTS, issuer="CU", url="http://localhost:8000/media/x.pdf")
 
 
 def test_operator_needs_eori_or_gln():

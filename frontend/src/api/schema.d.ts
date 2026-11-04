@@ -106,6 +106,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/qr/01/{gtin}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** QR code for a model-level passport */
+        get: operations["qr_gtin_api_qr_01__gtin__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qr/01/{gtin}/10/{batch}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** QR code for a batch-level passport */
+        get: operations["qr_gtin_batch_api_qr_01__gtin__10__batch__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qr/01/{gtin}/21/{serial}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** QR code for an item-level passport */
+        get: operations["qr_gtin_serial_api_qr_01__gtin__21__serial__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qr/01/{gtin}/10/{batch}/21/{serial}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** QR code for an item in a batch */
+        get: operations["qr_gtin_batch_serial_api_qr_01__gtin__10__batch__21__serial__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dpp/{gtin}/supplier-update/context": {
         parameters: {
             query?: never;
@@ -216,7 +284,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Suppliers with invitation state, waiting time and reminder due flag */
+        get: operations["supplier_statuses_api_dpp__gtin__suppliers_get"];
         put?: never;
         /** Attach a supplier and issue its invitation token */
         post: operations["invite_supplier_api_dpp__gtin__suppliers_post"];
@@ -260,6 +329,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dpp/{gtin}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder product images (first = main image); omitted URLs are removed */
+        put: operations["set_images_api_dpp__gtin__images_put"];
+        /** Upload a product image (JPEG, PNG or WebP, max 5 MB) */
+        post: operations["upload_image_api_dpp__gtin__images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dpp/{gtin}/suppliers/{supplier_id}/remind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send (MVP: store) a reminder with the supplier's portal link */
+        post: operations["remind_supplier_api_dpp__gtin__suppliers__supplier_id__remind_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dpp/{gtin}/outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reminder messages composed for this passport */
+        get: operations["outbox_api_dpp__gtin__outbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -294,6 +415,14 @@ export interface components {
             resolution: components["schemas"]["ResolutionMeta"];
             passport: components["schemas"]["DigitalProductPassport"];
             completeness: components["schemas"]["CompletenessReport"];
+        };
+        /** Body_upload_image_api_dpp__gtin__images_post */
+        Body_upload_image_api_dpp__gtin__images_post: {
+            /**
+             * File
+             * @description Product photo
+             */
+            file: string;
         };
         /** CareAndDurability */
         CareAndDurability: {
@@ -788,6 +917,25 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * ImageOrderRequest
+         * @description New order of the passport's images; URLs left out are removed (uploads are deleted).
+         */
+        ImageOrderRequest: {
+            /** Image Urls */
+            image_urls: string[];
+        };
+        /** ImageUploadResponse */
+        ImageUploadResponse: {
+            /** Gtin */
+            gtin: string;
+            /** Url */
+            url: string;
+            /** Image Urls */
+            image_urls: string[];
+            /** Passport Version */
+            passport_version: number;
+        };
+        /**
          * LifecycleBoundary
          * @enum {string}
          */
@@ -801,6 +949,11 @@ export interface components {
             path: string;
             /** Label */
             label: string;
+            /**
+             * Label De
+             * @description German label for user interfaces
+             */
+            label_de?: string | null;
             /**
              * Source
              * @description Regulatory or normative basis
@@ -822,6 +975,45 @@ export interface components {
          * @enum {string}
          */
         OperatorRole: "manufacturer" | "brand_owner" | "importer" | "authorised_representative";
+        /**
+         * OutboxMessage
+         * @description A reminder as it would be sent. The MVP stores it instead of delivering it.
+         */
+        OutboxMessage: {
+            /** Message Id */
+            message_id?: string;
+            /** Gtin */
+            gtin: string;
+            /** Supplier Id */
+            supplier_id: string;
+            /**
+             * Channel
+             * @default email
+             */
+            channel: string;
+            /** To */
+            to: string | null;
+            /** Subject */
+            subject: string;
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Delivered
+             * @default false
+             */
+            delivered: boolean;
+            /**
+             * Delivery
+             * @description outbox | smtp | provider name
+             * @default outbox
+             */
+            delivery: string;
+        };
         /**
          * PassportSummary
          * @description Compact list entry for brand dashboards.
@@ -936,6 +1128,33 @@ export interface components {
             /** Mono Material */
             mono_material: boolean | null;
         };
+        /** ReminderRequest */
+        ReminderRequest: {
+            /**
+             * Note
+             * @description Personal line for the mail
+             */
+            note?: string | null;
+        };
+        /** ReminderResponse */
+        ReminderResponse: {
+            /** Supplier Id */
+            supplier_id: string;
+            /** Supplier Name */
+            supplier_name: string;
+            message: components["schemas"]["OutboxMessage"];
+            /** Portal Link */
+            portal_link: string;
+            /** Reminder Count */
+            reminder_count: number;
+            /**
+             * Reminded At
+             * Format: date-time
+             */
+            reminded_at: string;
+            /** Warnings */
+            warnings: string[];
+        };
         /** RepairInfo */
         RepairInfo: {
             /** Instructions Url */
@@ -1037,6 +1256,15 @@ export interface components {
             contact_email?: string | null;
             /** @default pending */
             data_status: components["schemas"]["SupplierDataStatus"];
+            /** Invited At */
+            invited_at?: string | null;
+            /** Last Reminded At */
+            last_reminded_at?: string | null;
+            /**
+             * Reminder Count
+             * @default 0
+             */
+            reminder_count: number;
         };
         /**
          * SupplierContext
@@ -1119,6 +1347,21 @@ export interface components {
          * @enum {string}
          */
         SupplierRole: "fiber_production" | "spinning" | "weaving" | "knitting" | "dyeing" | "finishing" | "garment_making" | "trim_supplier";
+        /** SupplierStatus */
+        SupplierStatus: {
+            supplier: components["schemas"]["Supplier"];
+            /** Invitation Valid Until */
+            invitation_valid_until: string | null;
+            /**
+             * Portal Link
+             * @description Open invitation link, if any
+             */
+            portal_link?: string | null;
+            /** Days Waiting */
+            days_waiting: number;
+            /** Reminder Due */
+            reminder_due: boolean;
+        };
         /**
          * SupplierUpdateRequest
          * @description Partial update. Only the sections present are touched; the token decides what is allowed.
@@ -1513,6 +1756,198 @@ export interface operations {
             };
         };
     };
+    qr_gtin_api_qr_01__gtin__get: {
+        parameters: {
+            query?: {
+                /** @description svg (default) or png */
+                format?: "svg" | "png";
+                /** @description Module size in pixels */
+                scale?: number | null;
+                /** @description Send as attachment instead of inline */
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                gtin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QR code image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/svg+xml": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description Invalid GTIN, batch or serial */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qr_gtin_batch_api_qr_01__gtin__10__batch__get: {
+        parameters: {
+            query?: {
+                /** @description svg (default) or png */
+                format?: "svg" | "png";
+                /** @description Module size in pixels */
+                scale?: number | null;
+                /** @description Send as attachment instead of inline */
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                gtin: string;
+                batch: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QR code image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/svg+xml": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description Invalid GTIN, batch or serial */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qr_gtin_serial_api_qr_01__gtin__21__serial__get: {
+        parameters: {
+            query?: {
+                /** @description svg (default) or png */
+                format?: "svg" | "png";
+                /** @description Module size in pixels */
+                scale?: number | null;
+                /** @description Send as attachment instead of inline */
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                gtin: string;
+                serial: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QR code image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/svg+xml": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description Invalid GTIN, batch or serial */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qr_gtin_batch_serial_api_qr_01__gtin__10__batch__21__serial__get: {
+        parameters: {
+            query?: {
+                /** @description svg (default) or png */
+                format?: "svg" | "png";
+                /** @description Module size in pixels */
+                scale?: number | null;
+                /** @description Send as attachment instead of inline */
+                download?: boolean;
+            };
+            header?: never;
+            path: {
+                gtin: string;
+                batch: string;
+                serial: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QR code image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/svg+xml": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description Invalid GTIN, batch or serial */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     supplier_context_api_dpp__gtin__supplier_update_context_get: {
         parameters: {
             query?: {
@@ -1790,6 +2225,44 @@ export interface operations {
             };
         };
     };
+    supplier_statuses_api_dpp__gtin__suppliers_get: {
+        parameters: {
+            query?: {
+                /** @description Batch / lot (GS1 AI 10) */
+                batch?: string | null;
+                /** @description Serial (GS1 AI 21) */
+                serial?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                gtin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplierStatus"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     invite_supplier_api_dpp__gtin__suppliers_post: {
         parameters: {
             query?: never;
@@ -1885,6 +2358,187 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_images_api_dpp__gtin__images_put: {
+        parameters: {
+            query?: {
+                /** @description Batch / lot (GS1 AI 10) */
+                batch?: string | null;
+                /** @description Serial (GS1 AI 21) */
+                serial?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                gtin: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigitalProductPassport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_image_api_dpp__gtin__images_post: {
+        parameters: {
+            query?: {
+                /** @description Batch / lot (GS1 AI 10) */
+                batch?: string | null;
+                /** @description Serial (GS1 AI 21) */
+                serial?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                gtin: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_api_dpp__gtin__images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageUploadResponse"];
+                };
+            };
+            /** @description Image too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a JPEG/PNG/WebP */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remind_supplier_api_dpp__gtin__suppliers__supplier_id__remind_post: {
+        parameters: {
+            query?: {
+                /** @description Batch / lot (GS1 AI 10) */
+                batch?: string | null;
+                /** @description Serial (GS1 AI 21) */
+                serial?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                gtin: string;
+                supplier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReminderRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReminderResponse"];
+                };
+            };
+            /** @description Supplier has already delivered */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    outbox_api_dpp__gtin__outbox_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                gtin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxMessage"][];
                 };
             };
             /** @description Validation Error */

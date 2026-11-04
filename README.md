@@ -15,7 +15,11 @@ Was das Backend kann:
 - **Komponente C, Lieferantenportal**: `POST /api/dpp/{gtin}/supplier-update` mit
   Einladungs-Token; jede Lieferantenrolle darf nur ihre Abschnitte ändern, jede Änderung
   wird mit SHA-256 protokolliert, das Aggregat wird komplett re-validiert.
-- **Brand-API**: Pass anlegen, Lieferanten einladen, Lückenbericht, Chemie-Check, Publish.
+- **Brand-API**: Pass anlegen, Lieferanten einladen, Lückenbericht, Chemie-Check, Publish,
+  Produktbilder hochladen, ordnen und löschen (JPEG/PNG/WebP, Magic-Bytes-Prüfung),
+  Lieferanten-Status mit Fälligkeit und Erinnerungen (MVP: Postausgang statt Mailversand).
+- **QR-Code für das Etikett**: `GET /api/qr/01/{gtin}[/10/{batch}]` liefert den GS1 Digital
+  Link als QR (SVG für den Druck, PNG), Fehlerkorrektur M, Ruhezone enthalten.
 - **Frontend** (`frontend/`, Vite + React + TypeScript): Pass-Ansicht als Ziel des QR-Codes
   mit Tabs Kundinnen/Recycler, Lieferantenformular per Token-Link, Label-Dashboard.
   Editoriales Design ohne Komponenten-Framework, hell und dunkel, WCAG 2.2 AA (axe-core
@@ -105,6 +109,22 @@ curl -s -X POST http://localhost:8000/api/dpp/04012345000016/supplier-update \
 curl -s -X POST http://localhost:8000/api/dpp/04012345000016/publish -H "X-API-Key: demo-brand-key" | jq .status
 ```
 
+QR-Code für das Etikett (SVG) und als PNG-Download:
+
+```bash
+curl -s "http://localhost:8000/api/qr/01/04012345678901/10/LOT2026A" -o etikett.svg
+```
+
+```bash
+curl -s "http://localhost:8000/api/qr/01/04012345678901/10/LOT2026A?format=png&scale=12&download=true" -o etikett.png
+```
+
+Produktbild hochladen:
+
+```bash
+curl -s -X POST http://localhost:8000/api/dpp/04012345000016/images -H "X-API-Key: demo-brand-key" -F "file=@jacke.jpg" | jq .
+```
+
 Was dem Pass noch fehlt, wer es liefern muss und auf welcher Rechtsgrundlage:
 
 ```bash
@@ -140,6 +160,7 @@ frontend/src/
 ## Noch offen (nach dem MVP)
 
 PostgreSQL-Repository auf Basis von `db/schema.sql`, echte Authentifizierung (OAuth2/JWT,
-Verifiable Credentials), QR-Code-Export für Etiketten, Versionsabruf-API, Anbindung an das
+Verifiable Credentials), Versionsabruf-API, Anbindung an das
 EU-DPP-Register (ESPR Art. 12), ECHA-Kandidatenliste als Import, Pass-Anlage im Dashboard,
-Frontend-Tests, Deployment.
+echter Mailversand und Cron für fällige Erinnerungen, CSV-Import, Frontend-Tests, Deployment,
+Etikettenlayout rund um den QR-Code.

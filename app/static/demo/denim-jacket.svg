@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="t">
+  <title id="t">Illustration einer Jeansjacke</title>
+  <rect width="800" height="600" fill="#f2f3ee"/>
+  <g fill="#fcfcfa" stroke="#14181b" stroke-width="7" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M262 150 L344 112 L400 190 L456 112 L538 150 L614 230 L560 262 L548 500 L252 500 L240 262 L186 230 Z"/>
+    <path d="M344 112 L372 176 L400 190 L428 176 L456 112" fill="none"/>
+    <path d="M240 262 L252 500" fill="none"/>
+    <path d="M560 262 L548 500" fill="none"/>
+    <path d="M400 190 L400 500" fill="none"/>
+    <rect x="296" y="262" width="76" height="60" rx="4"/>
+    <rect x="428" y="262" width="76" height="60" rx="4"/>
+    <path d="M296 282 L372 282" fill="none"/>
+    <path d="M428 282 L504 282" fill="none"/>
+    <path d="M268 466 L532 466" fill="none"/>
+  </g>
+  <g fill="#14181b">
+    <circle cx="400" cy="226" r="6"/><circle cx="400" cy="286" r="6"/><circle cx="400" cy="346" r="6"/><circle cx="400" cy="406" r="6"/>
+  </g>
+  <g fill="none" stroke="#14181b" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round">
+    <path d="M268 484 L532 484"/>
+    <path d="M412 200 L412 452"/>
+  </g>
+</svg>

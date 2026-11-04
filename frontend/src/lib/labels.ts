@@ -8,6 +8,7 @@ import type {
   FiberType,
   FootprintMethod,
   LifecycleBoundary,
+  OperatorRole,
   RecycledSource,
   SupplierRole,
   TextileCategory,
@@ -167,9 +168,16 @@ const MISSING_LABELS: Record<string, string> = {
   suppliers: "Mindestens ein Lieferant",
 };
 
-export function missingLabel(field: { path: string; label: string }): string {
-  return MISSING_LABELS[field.path] ?? field.label;
+export function missingLabel(field: { path: string; label: string; label_de?: string | null }): string {
+  return field.label_de ?? MISSING_LABELS[field.path] ?? field.label;
 }
+
+export const OPERATOR_ROLE_LABELS: Record<OperatorRole, string> = {
+  manufacturer: "Hersteller",
+  brand_owner: "Markeninhaber",
+  importer: "Importeur",
+  authorised_representative: "Bevollmächtigter",
+};
 
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "";

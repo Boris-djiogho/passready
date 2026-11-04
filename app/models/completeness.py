@@ -16,6 +16,7 @@ Responsible = SupplierRole | Literal["brand"]
 class MissingField(DppViewModel):
     path: str = Field(description="JSON path inside the passport document")
     label: str
+    label_de: str | None = Field(default=None, description="German label for user interfaces")
     source: str = Field(description="Regulatory or normative basis")
     responsible: Responsible | None = Field(default=None, description="Who usually holds this data")
     mandatory: bool = True

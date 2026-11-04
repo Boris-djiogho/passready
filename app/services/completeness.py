@@ -25,11 +25,13 @@ class Rule:
     responsible: Responsible | None
     check: Check
     mandatory: bool = True
+    label_de: str = ""
 
     def as_missing(self) -> MissingField:
         return MissingField(
             path=self.path,
             label=self.label,
+            label_de=self.label_de or None,
             source=self.source,
             responsible=self.responsible,
             mandatory=self.mandatory,
@@ -43,6 +45,7 @@ RULES: tuple[Rule, ...] = (
         "ESPR Art. 10(1)(b), Annex III (b)(c); prEN 18219",
         "brand",
         lambda d: bool(d.identifier.gtin),
+        label_de="Produktkennung (GTIN)",
     ),
     Rule(
         "product.name",
@@ -50,6 +53,7 @@ RULES: tuple[Rule, ...] = (
         "ESPR Annex III (a); JRC textile data set",
         "brand",
         lambda d: bool(d.product.name),
+        label_de="Produktname",
     ),
     Rule(
         "product.taric_code",
@@ -57,6 +61,7 @@ RULES: tuple[Rule, ...] = (
         "ESPR Annex III (d), Art. 13 customs",
         "brand",
         lambda d: d.product.taric_code is not None,
+        label_de="Warennummer (TARIC)",
     ),
     Rule(
         "product.country_of_origin",
@@ -64,6 +69,7 @@ RULES: tuple[Rule, ...] = (
         "JRC textile data set; Regulation (EU) 952/2013 Art. 60",
         "brand",
         lambda d: d.product.country_of_origin is not None,
+        label_de="Herkunftsland",
     ),
     Rule(
         "economic_operator.eori|gln",
@@ -71,6 +77,7 @@ RULES: tuple[Rule, ...] = (
         "ESPR Annex III (g)(j); prEN 18219",
         "brand",
         lambda d: bool(d.economic_operator.eori or d.economic_operator.gln),
+        label_de="Betreiberkennung (EORI oder GLN)",
     ),
     Rule(
         "fiber_compositions",
@@ -78,6 +85,7 @@ RULES: tuple[Rule, ...] = (
         "Regulation (EU) 1007/2011 Art. 5-9; JRC textile data set (recycled content)",
         SupplierRole.WEAVING,
         lambda d: len(d.fiber_compositions) > 0,
+        label_de="Faserzusammensetzung inkl. Rezyklatanteil",
     ),
     Rule(
         "chemical_compliance",
@@ -85,6 +93,7 @@ RULES: tuple[Rule, ...] = (
         "ESPR Art. 7(5), Art. 2(27)-(28); REACH Art. 33",
         SupplierRole.DYEING,
         lambda d: d.chemical_compliance is not None,
+        label_de="Besorgniserregende Stoffe (REACH) und PFAS-Erklärung",
     ),
     Rule(
         "care_and_durability.care_symbols",
@@ -92,6 +101,7 @@ RULES: tuple[Rule, ...] = (
         "JRC textile data set (durability, care); ISO 3758",
         "brand",
         lambda d: bool(d.care_and_durability and d.care_and_durability.care_symbols),
+        label_de="Pflegehinweise",
     ),
     Rule(
         "environmental_footprint",
@@ -100,6 +110,7 @@ RULES: tuple[Rule, ...] = (
         SupplierRole.GARMENT_MAKING,
         lambda d: d.environmental_footprint is not None,
         mandatory=False,
+        label_de="Umweltfußabdruck (CO2)",
     ),
     Rule(
         "end_of_life",
@@ -108,6 +119,7 @@ RULES: tuple[Rule, ...] = (
         "brand",
         lambda d: d.end_of_life is not None,
         mandatory=False,
+        label_de="End-of-Life und Recycling",
     ),
     Rule(
         "suppliers",
@@ -116,6 +128,7 @@ RULES: tuple[Rule, ...] = (
         "brand",
         lambda d: len(d.suppliers) > 0,
         mandatory=False,
+        label_de="Mindestens ein Lieferant",
     ),
 )
 

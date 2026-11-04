@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.core.errors import PassReadyError
 from app.repositories.base import DppRepository
 from app.repositories.memory import InMemoryDppRepository
-from app.routers import dpp, health, resolver, supplier
+from app.routers import dpp, health, qr, resolver, supplier
 from app.services.seed import seed_demo_data
 
 DESCRIPTION = """
@@ -21,7 +24,9 @@ PassReady generates and serves Digital Product Passports (DPP) for small fashion
   routing (`?role=consumer|recycler|authority`).
 * **Supplier portal** `/api/dpp/{gtin}/supplier-update`: weaving, dyeing and other suppliers
   append their data with an invitation token.
-* **Brand API** `/api/dpp`: create passports, invite suppliers, check completeness, publish.
+* **Brand API** `/api/dpp`: create passports, invite suppliers, check completeness, publish,
+  upload product images.
+* **QR codes** `/api/qr/01/{gtin}[/10/{batch}]`: the data carrier for the label (SVG/PNG).
 
 Normative basis: ESPR (EU) 2024/1781 Art. 9-13 and Annex III, CEN-CLC/JTC 24 (prEN 18219,
 18220, 18221, 18216, 18222, 18223, 18239, 18246), GS1 Digital Link URI Syntax 1.4.
@@ -57,7 +62,7 @@ def create_app(
     settings = settings or Settings()
     repository = repository or InMemoryDppRepository()
     if settings.seed_demo_data and not repository.list_all():
-        seed_demo_data(repository, settings.supplier_token_ttl_days)
+        seed_demo_data(repository, settings.supplier_token_ttl_days, settings.media_base_url)
 
     app = FastAPI(
         title=settings.app_name,
@@ -79,8 +84,18 @@ def create_app(
 
     app.include_router(health.router)
     app.include_router(resolver.router)
+    app.include_router(qr.router)
     app.include_router(supplier.router)
     app.include_router(dpp.router)
+
+    uploads = Path(settings.media_dir) / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    app.mount("/media/uploads", StaticFiles(directory=uploads), name="media-uploads")
+    app.mount(
+        "/media/demo",
+        StaticFiles(directory=Path(__file__).parent / "static" / "demo"),
+        name="media-demo",
+    )
     return app
 
 

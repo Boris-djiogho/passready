@@ -14,7 +14,7 @@ listet, welche davon im Datenmodell stecken.
 | Artikel | Anforderung | Umsetzung im MVP | Code | Status |
 |---|---|---|---|---|
 | Art. 9 | Ein DPP pro Produkt; Granularität (Modell, Charge, Einzelstück) legt der delegierte Rechtsakt fest | `Granularity` wird aus GTIN/Charge/Serial abgeleitet; Speicherschlüssel `(gtin, batch, serial)`; Resolver fällt hierarchisch zurück | `models/identifiers.py`, `repositories/memory.py::resolve` | erfüllt |
-| Art. 10(1)(a) | Daten über einen Datenträger am Produkt erreichbar | QR-Inhalt ist eine GS1-Digital-Link-URI auf der Resolver-Domain | `core/gs1.py::build_digital_link`, `routers/resolver.py` | erfüllt (QR-Bild-Export offen) |
+| Art. 10(1)(a) | Daten über einen Datenträger am Produkt erreichbar | QR-Code mit GS1-Digital-Link-URI auf der Resolver-Domain, als SVG/PNG für das Etikett | `services/qr.py`, `routers/qr.py`, `core/gs1.py` | erfüllt |
 | Art. 10(1)(b) | Eindeutige Produktkennung nach ISO/IEC 15459 | GTIN (Prüfziffer geprüft) plus Charge/Serial; zusätzlich `dpp_id` als URN | `core/gs1.py`, `DppIdentifier` | erfüllt |
 | Art. 10(1)(c) | Offene Standards, maschinenlesbar, strukturiert, durchsuchbar, übertragbar | JSON-Schema über OpenAPI (`/openapi.json`), JSON-LD mit GS1-Web-Vocabulary | `services/jsonld.py` | erfüllt |
 | Art. 10(1)(d) | Zugriffsrechte je Akteur | Drei Rollen mit eigenen Response-Modellen; Behörde braucht Credential | `core/deps.py::resolve_role`, `services/views.py` | erfüllt (MVP-Auth) |
@@ -47,7 +47,7 @@ listet, welche davon im Datenmodell stecken.
 | Norm | Gegenstand | Umsetzung | Status |
 |---|---|---|---|
 | prEN 18219 | Eindeutige Kennungen für Produkt, Akteur, Standort | GTIN-14 + AI (10)/(21) für das Produkt, URN als Pass-ID; EORI/GLN für Akteure; Facility-GLN für Standorte, alle mit Prüfziffer-Validierung | erfüllt |
-| prEN 18220 | Datenträger (1D/2D-Code, RFID, NFC), per Smartphone lesbar | QR-Code (ISO/IEC 18004) mit GS1-Digital-Link-URI; derselbe Code ist an der Kasse als GTIN lesbar | teilweise (URI fertig, Bild-Export offen) |
+| prEN 18220 | Datenträger (1D/2D-Code, RFID, NFC), per Smartphone lesbar | QR-Code (ISO/IEC 18004) mit GS1-Digital-Link-URI, Fehlerkorrektur M, Ruhezone 4 Module, SVG/PNG-Export; derselbe Code ist an der Kasse als GTIN lesbar | erfüllt (NFC/RFID nicht vorgesehen) |
 | prEN 18221 | Speicherung, Persistenz, Versionen, Backup | `version` je Pass, Versionstabelle im Schema, stabile Resolver-Domain in Settings | teilweise |
 | prEN 18216 | Datenaustausch: Protokolle und Formate | HTTPS/REST, JSON, JSON-LD, `application/linkset+json` | erfüllt |
 | prEN 18222 | APIs: Lesen, Versionszugriff, Lifecycle-Aktionen | Resolver-GET mit `X-DPP-Version`-Header; Lifecycle `draft → pending_supplier_data → in_review → published → withdrawn`; Publish-Endpunkt | teilweise (Abruf alter Versionen offen) |
@@ -76,7 +76,7 @@ der Code auf tausenden Etiketten. Deshalb ist `resolver_base_url` eine Einstellu
 | Norm | Wofür | Wo |
 |---|---|---|
 | ISO/IEC 15459 | Eindeutige Identifikatoren (von ESPR Art. 10 und prEN 18219 gefordert) | GTIN plus Serial, `dpp_id` als URN |
-| ISO/IEC 18004 | QR-Code-Symbologie | Datenträger für die Digital-Link-URI (Export folgt) |
+| ISO/IEC 18004 | QR-Code-Symbologie | `services/qr.py` (segno), Export über `/api/qr` |
 | ISO/IEC 15418, 15434 | GS1 Application Identifiers und Syntax | AI 01, 10, 21 in `core/gs1.py` |
 | ISO 3166-1 alpha-2 | Ländercodes | `CountryCode` (Herkunft, Lieferantenländer, Adressen) |
 | ISO 3758 | Pflegesymbole | `CareSymbol` |

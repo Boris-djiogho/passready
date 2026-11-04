@@ -4,16 +4,28 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 
 from app.core.deps import get_repository, get_settings, require_brand_key
 from app.core.errors import ConflictError
-from app.models.brand import CreatePassportRequest, SupplierInviteRequest, SupplierInviteResponse
+from app.models.brand import (
+    CreatePassportRequest,
+    ImageOrderRequest,
+    ImageUploadResponse,
+    OutboxMessage,
+    ReminderRequest,
+    ReminderResponse,
+    SupplierInviteRequest,
+    SupplierInviteResponse,
+    SupplierStatus,
+)
 from app.models.completeness import CompletenessReport
 from app.models.passport import DigitalProductPassport, PassportSummary
 from app.models.scan import ScanSummary
 from app.services.chemistry import ChemistryScreeningResult, screen
+from app.services.media import MAX_IMAGE_BYTES, ImageTooLargeError, MediaService
 from app.services.passport import PassportService
+from app.services.reminders import ReminderService
 
 router = APIRouter(
     prefix="/api/dpp",
@@ -106,3 +118,89 @@ async def publish(
 @router.get("/{gtin}/scans", response_model=ScanSummary, summary="Scan statistics (pay-per-scan)")
 async def scans(request: Request, gtin: str) -> ScanSummary:
     return _service(request).scan_summary(gtin)
+
+
+@router.post(
+    "/{gtin}/images",
+    response_model=ImageUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a product image (JPEG, PNG or WebP, max 5 MB)",
+    responses={
+        413: {"description": "Image too large"},
+        415: {"description": "Not a JPEG/PNG/WebP"},
+    },
+)
+async def upload_image(
+    request: Request,
+    gtin: str,
+    file: UploadFile = File(..., description="Product photo"),
+    batch: BatchQuery = None,
+    serial: SerialQuery = None,
+) -> ImageUploadResponse:
+    data = await file.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ImageTooLargeError("image exceeds 5 MB")
+    service = MediaService(get_repository(request), get_settings(request))
+    passport, url = service.add_product_image(gtin, data, batch, serial)
+    return ImageUploadResponse(
+        gtin=passport.identifier.gtin,
+        url=url,
+        image_urls=list(passport.product.image_urls),
+        passport_version=passport.version,
+    )
+
+
+@router.put(
+    "/{gtin}/images",
+    response_model=DigitalProductPassport,
+    summary="Reorder product images (first = main image); omitted URLs are removed",
+)
+async def set_images(
+    request: Request,
+    gtin: str,
+    payload: ImageOrderRequest,
+    batch: BatchQuery = None,
+    serial: SerialQuery = None,
+) -> DigitalProductPassport:
+    service = MediaService(get_repository(request), get_settings(request))
+    return service.set_product_images(gtin, payload.image_urls, batch, serial)
+
+
+@router.get(
+    "/{gtin}/suppliers",
+    response_model=list[SupplierStatus],
+    summary="Suppliers with invitation state, waiting time and reminder due flag",
+)
+async def supplier_statuses(
+    request: Request, gtin: str, batch: BatchQuery = None, serial: SerialQuery = None
+) -> list[SupplierStatus]:
+    return ReminderService(get_repository(request), get_settings(request)).statuses(
+        gtin, batch, serial
+    )
+
+
+@router.post(
+    "/{gtin}/suppliers/{supplier_id}/remind",
+    response_model=ReminderResponse,
+    summary="Send (MVP: store) a reminder with the supplier's portal link",
+    responses={409: {"description": "Supplier has already delivered"}},
+)
+async def remind_supplier(
+    request: Request,
+    gtin: str,
+    supplier_id: str,
+    payload: ReminderRequest | None = None,
+    batch: BatchQuery = None,
+    serial: SerialQuery = None,
+) -> ReminderResponse:
+    service = ReminderService(get_repository(request), get_settings(request))
+    return service.remind(gtin, supplier_id, payload.note if payload else None, batch, serial)
+
+
+@router.get(
+    "/{gtin}/outbox",
+    response_model=list[OutboxMessage],
+    summary="Reminder messages composed for this passport",
+)
+async def outbox(request: Request, gtin: str) -> list[OutboxMessage]:
+    return ReminderService(get_repository(request), get_settings(request)).outbox(gtin)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from uuid import uuid4
 
@@ -86,6 +87,9 @@ class Supplier(DppBaseModel):
     )
     contact_email: EmailStr | None = None
     data_status: SupplierDataStatus = SupplierDataStatus.PENDING
+    invited_at: datetime | None = None
+    last_reminded_at: datetime | None = None
+    reminder_count: int = Field(default=0, ge=0)
 
     @field_validator("facility_gln")
     @classmethod

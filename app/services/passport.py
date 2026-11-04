@@ -110,21 +110,23 @@ class PassportService:
     def invite_supplier(self, gtin: str, request: SupplierInviteRequest) -> SupplierInviteResponse:
         passport = self.get(gtin, request.batch, request.serial)
         supplier = self._ensure_supplier(passport, request)
-        if passport.supplier_by_id(supplier.supplier_id) is None:
-            passport = passport.model_copy(
-                update={
-                    "suppliers": [*passport.suppliers, supplier],
-                    "status": (
-                        DppStatus.PENDING_SUPPLIER_DATA
-                        if passport.status is DppStatus.DRAFT
-                        else passport.status
-                    ),
-                    "updated_at": utcnow(),
-                }
-            )
-            passport = self._repository.save(
-                DigitalProductPassport.model_validate(passport.model_dump())
-            )
+        now = utcnow()
+        supplier = supplier.model_copy(update={"invited_at": supplier.invited_at or now})
+        suppliers = [s for s in passport.suppliers if s.supplier_id != supplier.supplier_id]
+        passport = passport.model_copy(
+            update={
+                "suppliers": [*suppliers, supplier],
+                "status": (
+                    DppStatus.PENDING_SUPPLIER_DATA
+                    if passport.status is DppStatus.DRAFT
+                    else passport.status
+                ),
+                "updated_at": now,
+            }
+        )
+        passport = self._repository.save(
+            DigitalProductPassport.model_validate(passport.model_dump())
+        )
         invitation = self._suppliers.invite(passport, supplier, request.allowed_sections)
         path = f"/api/dpp/{passport.identifier.gtin}/supplier-update"
         return SupplierInviteResponse(

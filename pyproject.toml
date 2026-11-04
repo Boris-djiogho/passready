@@ -9,6 +9,8 @@ dependencies = [
   "uvicorn[standard]>=0.30",
   "pydantic[email]>=2.7",
   "pydantic-settings>=2.3",
+  "segno>=1.6",
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -39,7 +41,7 @@ ignore = ["ANN401"]
 "tests/*" = ["ANN", "E501"]
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header"]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header", "fastapi.File"]
 
 [tool.mypy]
 python_version = "3.10"

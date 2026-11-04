@@ -29,10 +29,15 @@ class Role(str, Enum):
     AUTHORITY = "authority"
 
 
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
+
+
 def _require_https(url: HttpUrl) -> HttpUrl:
-    if url.scheme != "https":
-        raise ValueError("only https URLs are allowed")
-    return url
+    if url.scheme == "https":
+        return url
+    if url.scheme == "http" and url.host in _LOCAL_HOSTS:
+        return url  # local development only (media served by the dev backend)
+    raise ValueError("only https URLs are allowed (http only for localhost)")
 
 
 HttpsUrl = Annotated[HttpUrl, AfterValidator(_require_https)]

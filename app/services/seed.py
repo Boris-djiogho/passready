@@ -57,7 +57,7 @@ BRAND = EconomicOperator(
 )
 
 
-def _tee_passport() -> DigitalProductPassport:
+def _tee_passport(media_base_url: str) -> DigitalProductPassport:
     now = utcnow()
     suppliers = [
         Supplier(
@@ -153,7 +153,7 @@ def _tee_passport() -> DigitalProductPassport:
             size_range="XS-XXL",
             season="SS26",
             weight_g=180.0,
-            image_urls=[HttpUrl("https://cdn.nordlicht-apparel.example/tee-nebelgrau.jpg")],
+            image_urls=[HttpUrl(f"{media_base_url}/demo/organic-tee.svg")],
         ),
         economic_operator=BRAND,
         suppliers=suppliers,
@@ -292,7 +292,7 @@ def _tee_batch_passport(model_level: DigitalProductPassport) -> DigitalProductPa
     return DigitalProductPassport.model_validate(candidate.model_dump())
 
 
-def _jacket_passport() -> DigitalProductPassport:
+def _jacket_passport(media_base_url: str) -> DigitalProductPassport:
     now = utcnow()
     return DigitalProductPassport(
         identifier=DppIdentifier(
@@ -310,6 +310,7 @@ def _jacket_passport() -> DigitalProductPassport:
             size_range="S-XL",
             season="AW26",
             weight_g=650.0,
+            image_urls=[HttpUrl(f"{media_base_url}/demo/denim-jacket.svg")],
         ),
         economic_operator=BRAND,
         suppliers=[
@@ -320,6 +321,7 @@ def _jacket_passport() -> DigitalProductPassport:
                 tier=2,
                 country="TR",
                 contact_email="export@egedenim.example.org",
+                invited_at=now - timedelta(days=9),
             ),
             Supplier(
                 supplier_id=DEMO_SUPPLIER_DYEING_ID,
@@ -328,6 +330,7 @@ def _jacket_passport() -> DigitalProductPassport:
                 tier=2,
                 country="TR",
                 contact_email="kalite@maviboya.example.org",
+                invited_at=now - timedelta(days=9),
             ),
         ],
         care_and_durability=CareAndDurability(
@@ -354,11 +357,15 @@ def _jacket_passport() -> DigitalProductPassport:
     )
 
 
-def seed_demo_data(repository: DppRepository, token_ttl_days: int = 30) -> None:
-    tee = _tee_passport()
+def seed_demo_data(
+    repository: DppRepository,
+    token_ttl_days: int = 30,
+    media_base_url: str = "http://localhost:8000/media",
+) -> None:
+    tee = _tee_passport(media_base_url)
     repository.save(tee)
     repository.save(_tee_batch_passport(tee))
-    jacket = repository.save(_jacket_passport())
+    jacket = repository.save(_jacket_passport(media_base_url))
 
     now = utcnow()
     for token, supplier_id, role in (
@@ -373,6 +380,6 @@ def seed_demo_data(repository: DppRepository, token_ttl_days: int = 30) -> None:
                 supplier_role=role,
                 allowed_sections=set(ROLE_DEFAULT_SECTIONS[role]),
                 expires_at=now + timedelta(days=token_ttl_days),
-                created_at=now,
+                created_at=now - timedelta(days=9),
             )
         )

@@ -17,6 +17,13 @@ export type ChemistryScreeningResult = Schemas["ChemistryScreeningResult"];
 export type SupplierInviteRequest = Schemas["SupplierInviteRequest"];
 export type SupplierInviteResponse = Schemas["SupplierInviteResponse"];
 export type ScanSummary = Schemas["ScanSummary"];
+export type ImageUploadResponse = Schemas["ImageUploadResponse"];
+export type SupplierStatus = Schemas["SupplierStatus"];
+export type ReminderResponse = Schemas["ReminderResponse"];
+export type OutboxMessage = Schemas["OutboxMessage"];
+export type CreatePassportRequest = Schemas["CreatePassportRequest"];
+export type EconomicOperator = Schemas["EconomicOperator"];
+export type OperatorRole = Schemas["OperatorRole"];
 export type FiberComposition = Schemas["FiberComposition"];
 export type FiberComponent = Schemas["FiberComponent"];
 export type Certificate = Schemas["Certificate"];
@@ -101,6 +108,22 @@ export function digitalLinkPath(gtin: string, batch?: string | null, serial?: st
   return path;
 }
 
+export type QrFormat = "svg" | "png";
+
+/** URL of the label QR code (GS1 Digital Link in a QR symbol) for a passport. */
+export function qrUrl(
+  gtin: string,
+  batch: string | null | undefined,
+  serial: string | null | undefined,
+  fmt: QrFormat,
+  options: { download?: boolean; scale?: number } = {},
+): string {
+  const params = new URLSearchParams({ format: fmt });
+  if (options.download) params.set("download", "true");
+  if (options.scale) params.set("scale", String(options.scale));
+  return `${API_BASE}/api/qr${digitalLinkPath(gtin, batch, serial)}?${params.toString()}`;
+}
+
 function qualifierQuery(batch?: string | null, serial?: string | null): string {
   const params = new URLSearchParams();
   if (batch) params.set("batch", batch);
@@ -165,6 +188,31 @@ export function brandApi(apiKey: string) {
         headers,
       }),
     scans: (gtin: string) => request<ScanSummary>(`${base}/${gtin}/scans`, { headers }),
+    create: (payload: CreatePassportRequest) =>
+      request<DigitalProductPassport>(base, { method: "POST", headers: jsonHeaders, body: JSON.stringify(payload) }),
+    setImages: (gtin: string, imageUrls: string[], batch?: string | null, serial?: string | null) =>
+      request<DigitalProductPassport>(`${base}/${gtin}/images${qualifierQuery(batch, serial)}`, {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify({ image_urls: imageUrls }),
+      }),
+    supplierStatuses: (gtin: string, batch?: string | null, serial?: string | null) =>
+      request<SupplierStatus[]>(`${base}/${gtin}/suppliers${qualifierQuery(batch, serial)}`, { headers }),
+    remind: (gtin: string, supplierId: string, note: string | null, batch?: string | null, serial?: string | null) =>
+      request<ReminderResponse>(`${base}/${gtin}/suppliers/${supplierId}/remind${qualifierQuery(batch, serial)}`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ note }),
+      }),
+    uploadImage: (gtin: string, file: File, batch?: string | null, serial?: string | null) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return request<ImageUploadResponse>(`${base}/${gtin}/images${qualifierQuery(batch, serial)}`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+    },
   };
 }
 

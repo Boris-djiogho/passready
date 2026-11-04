@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.models.brand import OutboxMessage
 from app.models.passport import DigitalProductPassport
 from app.models.scan import ScanEvent
 from app.models.supplier import SupplierInvitation
@@ -37,6 +38,10 @@ class DppRepository(Protocol):
     def list_invitations(self, gtin: str) -> list[SupplierInvitation]: ...
 
     def add_scan(self, event: ScanEvent) -> None: ...
+
+    def add_outbox(self, message: OutboxMessage) -> OutboxMessage: ...
+
+    def list_outbox(self, gtin: str) -> list[OutboxMessage]: ...
 
     def list_scans(self, gtin: str) -> list[ScanEvent]: ...
 

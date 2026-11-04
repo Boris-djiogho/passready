@@ -185,13 +185,13 @@ legend.section-title { display: flex; width: 100%; }
 /* forms */
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 legend { padding: 0; }
-.field { display: grid; gap: 0.3rem; }
+.field { display: grid; gap: 0.3rem; align-content: start; }
 .field label, .field .label { font-size: 0.9rem; font-weight: 600; }
 .field input, .field select, .field textarea { width: 100%; min-height: var(--control); padding: 0.5rem 0.75rem; border: 1px solid var(--hair-strong); border-radius: var(--radius); background: var(--paper); }
 .field textarea { min-height: 5rem; }
 .field input[aria-invalid="true"], .field select[aria-invalid="true"] { border: 2px solid var(--danger); }
 .field-hint { color: var(--ink-2); font-size: 0.85rem; }
-.form-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
+.form-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); align-items: start; }
 .check { display: flex; align-items: center; gap: 0.6rem; min-height: var(--control); cursor: pointer; }
 .check input { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); margin: 0; flex: none; }
 .subform { padding: 1rem 0; border-top: 1px dashed var(--hair-strong); display: grid; gap: 0.75rem; }
@@ -221,7 +221,7 @@ legend { padding: 0; }
 
 /* passport header */
 .pass-head { padding-bottom: 0.5rem; }
-.pass-image { border-radius: var(--radius); margin: 1.25rem 0 0; max-height: 22rem; width: 100%; object-fit: cover; }
+.pass-image { display: block; border-radius: var(--radius); margin: 1.25rem 0 0; width: 100%; max-height: 22rem; object-fit: contain; object-position: center; background: var(--paper-2); }
 .pass-foot { border-top: 1px solid var(--hair); padding-top: 1.25rem; margin-top: 1rem; color: var(--ink-2); font-size: 0.875rem; display: grid; gap: 0.4rem; }
 
 /* dashboard */
@@ -230,3 +230,38 @@ legend { padding: 0; }
 .key-form input { min-height: var(--control); padding: 0.5rem 0.75rem; border: 1px solid var(--hair-strong); border-radius: var(--radius); background: var(--paper); min-width: 12rem; }
 .detail-head { display: grid; gap: 0.5rem; padding-bottom: 1.25rem; }
 .empty { color: var(--ink-2); padding: 2rem 0; }
+
+/* product images and QR code (dashboard) */
+.thumbs { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.thumbs img { width: 5.5rem; height: 5.5rem; object-fit: cover; border: 1px solid var(--hair); border-radius: var(--radius); background: var(--paper-2); }
+.upload-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; }
+.upload-row .field { flex: 1 1 16rem; }
+.field input[type="file"] { padding: 0.55rem 0.75rem; }
+.qr-figure { display: grid; gap: 0.75rem; margin: 0; }
+@media (min-width: 560px) { .qr-figure { grid-template-columns: 11rem minmax(0, 1fr); align-items: start; } }
+.qr-figure img { width: 11rem; height: 11rem; background: #ffffff; border: 1px solid var(--hair); border-radius: var(--radius); }
+.qr-figure figcaption { display: grid; gap: 0.5rem; font-size: 0.9rem; }
+
+/* gallery on the passport page */
+.gallery { margin: 1.25rem 0 0; display: grid; gap: 0.5rem; }
+.gallery .pass-image { margin: 0; }
+.gallery-thumbs { justify-content: flex-start; }
+.gallery-thumbs { list-style: none; padding: 0; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.gallery-thumbs button { padding: 0; border: 1px solid var(--hair); border-radius: var(--radius); background: var(--paper-2); width: 3.5rem; height: 3.5rem; overflow: hidden; cursor: pointer; }
+.gallery-thumbs button[aria-pressed="true"] { border: 2px solid var(--ink); }
+.gallery-thumbs img { width: 100%; height: 100%; object-fit: cover; }
+
+/* dashboard images with actions */
+.thumbs li { display: grid; gap: 0.35rem; justify-items: start; }
+.thumb-actions { display: flex; gap: 0.35rem; }
+.thumb-actions button { font-size: 0.8rem; min-height: 1.9rem; padding: 0 0.6rem; }
+.thumbs .main-tag { font-size: 0.75rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* reminders */
+.mail { white-space: pre-wrap; font-family: var(--sans); font-size: 0.9rem; background: var(--paper); border: 1px solid var(--hair); border-radius: var(--radius); padding: 0.75rem 1rem; margin: 0.5rem 0 0; }
+.table .cell-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.table .btn-small { min-height: 2rem; }
+.check-grid { display: grid; gap: 0.25rem 1rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.check-grid .check { min-height: 2.25rem; }
+details.operator { border-top: 1px solid var(--hair); padding-top: 0.75rem; }
+details.operator summary { cursor: pointer; font-weight: 600; min-height: var(--control); display: flex; align-items: center; }

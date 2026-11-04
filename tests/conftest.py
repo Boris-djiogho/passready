@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Iterator
 
 import pytest
@@ -17,6 +18,7 @@ LANDING_BASE = "https://pass.passready.test"
 
 def make_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
+        "media_dir": tempfile.mkdtemp(prefix="passready-media-"),
         "environment": "test",
         "seed_demo_data": True,
         "brand_api_key": "test-brand-key",

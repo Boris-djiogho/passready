@@ -38,6 +38,20 @@ class Settings(BaseSettings):
         description="Browser origins allowed to call the API directly (frontend hosts).",
     )
     seed_demo_data: bool = True
+    portal_base_url: str = Field(
+        default="http://localhost:5173",
+        description="Frontend origin; supplier links in reminders point here (/supplier/...)",
+    )
+    reminder_interval_days: int = Field(
+        default=7,
+        ge=1,
+        description="A pending supplier is 'due' for a reminder after this many days",
+    )
+    media_dir: str = Field(default="media", description="Local folder for uploaded product images")
+    media_base_url: str = Field(
+        default="http://localhost:8000/media",
+        description="Public base URL under which /media files are served (https in production)",
+    )
     database_url: str | None = Field(
         default=None,
         description="PostgreSQL DSN. Unset = in-memory repository (JSONB-shaped documents).",
