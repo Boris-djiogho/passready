@@ -1,6 +1,6 @@
 /** Supplier form: opened via token link, shows only what this supplier may and should fill in. */
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import {
@@ -16,6 +16,7 @@ import {
   supplierContext,
   supplierUpdate,
 } from "../api/client";
+import { usePageTitle } from "../lib/a11y";
 import {
   CERTIFICATE_LABELS,
   FIBER_LABELS,
@@ -32,7 +33,7 @@ interface CertRow { id: string; certificateId: string; type: CertificateType; is
 interface SubstanceRow { id: string; name: string; cas: string; concentration: string; location: string }
 
 let counter = 0;
-const nextId = () => `row-${Date.now().toString(36)}-${(counter += 1)}`;
+const nextId = () => `row-${(counter += 1)}`;
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 const CHEMISTRY_CERT_TYPES: CertificateType[] = ["oeko_tex_standard_100", "oeko_tex_made_in_green", "bluesign", "zdhc_mrsl", "reach_declaration", "pfas_declaration", "test_report"];
@@ -44,6 +45,7 @@ export function SupplierPage() {
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  usePageTitle("Lieferantenportal");
 
   useEffect(() => {
     if (!token) {
@@ -58,18 +60,33 @@ export function SupplierPage() {
   }, [gtin, token]);
 
   return (
-    <main className="page">
+    <main id="main" tabIndex={-1} className="wrap">
       <p className="eyebrow">Lieferantenportal</p>
-      {state.status === "loading" && <div className="card empty">Einladung wird geprüft …</div>}
+      {state.status === "loading" && <p role="status" className="muted" style={{ marginTop: "1rem" }}>Einladung wird geprüft …</p>}
       {state.status === "error" && (
-        <section className="card">
-          <h2>Einladung ungültig</h2>
-          <p className="muted">{state.error instanceof ApiError && state.error.status === 401 ? "Das Token ist unbekannt, abgelaufen oder zurückgezogen. Bitte beim Label einen neuen Link anfordern." : state.error.message}</p>
+        <section role="alert" aria-labelledby="err-title" style={{ marginTop: "1rem" }}>
+          <h1 id="err-title" className="display">Einladung ungültig</h1>
+          <p className="lede">
+            {state.error instanceof ApiError && state.error.status === 401
+              ? "Das Token ist unbekannt, abgelaufen oder zurückgezogen. Bitte beim Label einen neuen Link anfordern."
+              : state.error.message}
+          </p>
         </section>
       )}
       {state.status === "ready" && <SupplierForm gtin={gtin} token={token} context={state.context} />}
     </main>
   );
+}
+
+/** Map a backend validation location (e.g. body.fiber_compositions.0.fibers.1.percentage) to a field id. */
+function fieldIdFor(loc: (string | number)[]): string | null {
+  const parts = loc.filter((p) => p !== "body").map(String);
+  while (parts.length > 0) {
+    const id = parts.join("-");
+    if (document.getElementById(id)) return id;
+    parts.pop();
+  }
+  return null;
 }
 
 function SupplierForm({ gtin, token, context }: { gtin: string; token: string; context: SupplierContext }) {
@@ -106,6 +123,8 @@ function SupplierForm({ gtin, token, context }: { gtin: string; token: string; c
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SupplierUpdateResponse | null>(null);
   const [error, setError] = useState<ApiError | Error | null>(null);
+  const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
+  const errorRef = useRef<HTMLDivElement>(null);
 
   const fiberTotal = useMemo(() => fiberRows.reduce((sum, row) => sum + (Number(row.percentage) || 0), 0), [fiberRows]);
   const fiberTotalOk = Math.abs(fiberTotal - 100) <= 1;
@@ -184,10 +203,17 @@ function SupplierForm({ gtin, token, context }: { gtin: string; token: string; c
     event.preventDefault();
     setSubmitting(true);
     setError(null);
+    setInvalidIds(new Set());
     try {
       setResult(await supplierUpdate(gtin, token, buildPayload()));
     } catch (caught) {
-      setError(caught instanceof Error ? caught : new Error(String(caught)));
+      const failure = caught instanceof Error ? caught : new Error(String(caught));
+      setError(failure);
+      if (failure instanceof ApiError) {
+        const ids = failure.issues.map((issue) => fieldIdFor(issue.loc)).filter((id): id is string => id !== null);
+        setInvalidIds(new Set(ids));
+      }
+      requestAnimationFrame(() => errorRef.current?.focus());
     } finally {
       setSubmitting(false);
     }
@@ -195,221 +221,307 @@ function SupplierForm({ gtin, token, context }: { gtin: string; token: string; c
 
   if (result) {
     return (
-      <section className="card">
-        <h2>Daten übermittelt</h2>
-        <div className="alert ok">Vielen Dank, {context.supplier.name}. Ihre Angaben sind im Pass angekommen (Version {result.passport_version}).</div>
-        <dl className="kv" style={{ marginTop: 12 }}>
+      <section role="status" aria-labelledby="done-title" style={{ marginTop: "1rem" }}>
+        <h1 id="done-title" className="display">Daten übermittelt</h1>
+        <p className="lede">
+          Vielen Dank, {context.supplier.name}. Ihre Angaben sind im Pass angekommen und als Version {result.passport_version} gespeichert.
+        </p>
+        <dl className="facts">
           <dt>Status des Passes</dt><dd>{STATUS_LABELS[result.status]}</dd>
           <dt>Abschnitte</dt><dd>{result.sections_updated.map((s) => SECTION_LABELS[s]).join(", ")}</dd>
-          <dt>Nachweis</dt><dd><code className="tiny">{result.contribution.payload_sha256.slice(0, 16)}…</code> (SHA-256 der Übermittlung)</dd>
+          <dt>Prüfsumme</dt><dd><code>{result.contribution.payload_sha256.slice(0, 16)}…</code> (SHA-256 der Übermittlung)</dd>
         </dl>
-        {result.missing_after_update.length > 0 ? (
-          <p className="small muted" style={{ marginTop: 10 }}>
-            Dem Pass fehlen noch: {result.missing_after_update.map((m) => missingLabel(m)).join(", ")}. Dafür sind andere Beteiligte zuständig.
-          </p>
-        ) : (
-          <p className="small muted" style={{ marginTop: 10 }}>Der Pass ist vollständig und kann vom Label veröffentlicht werden.</p>
-        )}
+        <p className="muted" style={{ marginTop: "1rem" }}>
+          {result.missing_after_update.length > 0
+            ? `Dem Pass fehlen noch: ${result.missing_after_update.map((m) => missingLabel(m)).join(", ")}. Dafür sind andere Beteiligte zuständig.`
+            : "Der Pass ist vollständig und kann vom Label veröffentlicht werden."}
+        </p>
       </section>
     );
   }
 
+  const invalid = (id: string) => (invalidIds.has(id) ? true : undefined);
+
   return (
-    <form className="stack" onSubmit={onSubmit}>
-      <section className="card">
-        <div className="row between">
-          <h2 style={{ margin: 0 }}>{context.supplier.name}</h2>
-          <span className="chip accent">{ROLE_LABELS[context.supplier.role]}</span>
-        </div>
-        <p className="muted small" style={{ marginTop: 6 }}>
-          Artikel <strong>{context.product_name}</strong>, GTIN <code>{context.gtin}</code>
-          {context.batch ? <>, Charge <code>{context.batch}</code></> : null}. Link gültig bis {formatDate(context.expires_at)}.
+    <form className="stack-lg" onSubmit={onSubmit} noValidate={false} aria-describedby="form-intro">
+      <header>
+        <h1 className="display">{context.supplier.name}</h1>
+        <p className="lede" id="form-intro">
+          {ROLE_LABELS[context.supplier.role]} für <strong>{context.product_name}</strong>, GTIN <code>{context.gtin}</code>
+          {context.batch ? <>, Charge <code>{context.batch}</code></> : null}. Der Link ist bis {formatDate(context.expires_at)} gültig.
         </p>
-        {context.missing_for_me.length > 0 ? (
-          <div className="alert warn" style={{ marginTop: 10 }}>
-            Vom Label angefragt:
-            <ul>{context.missing_for_me.map((m) => <li key={m.path}><strong>{missingLabel(m)}</strong> <span className="tiny">({m.source})</span></li>)}</ul>
-          </div>
-        ) : (
-          <div className="alert ok" style={{ marginTop: 10 }}>Für Ihre Rolle fehlen keine Pflichtangaben mehr. Sie können Angaben trotzdem aktualisieren.</div>
-        )}
-      </section>
+        <div className={`notice ${context.missing_for_me.length > 0 ? "notice-warn" : "notice-ok"}`} style={{ marginTop: "1.25rem" }}>
+          {context.missing_for_me.length > 0 ? (
+            <>
+              <strong>Vom Label angefragt</strong>
+              <ul>
+                {context.missing_for_me.map((m) => (
+                  <li key={m.path}>{missingLabel(m)} <span className="small muted" lang="en">({m.source})</span></li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <>Für Ihre Rolle fehlen keine Pflichtangaben mehr. Sie können Angaben trotzdem aktualisieren.</>
+          )}
+        </div>
+      </header>
+
+      {error && (
+        <div ref={errorRef} tabIndex={-1} role="alert" className="notice notice-danger" id="form-errors">
+          <ErrorSummary error={error} />
+        </div>
+      )}
 
       {allowed.has("fiber_compositions") && (
-        <section className="card">
-          <div className="card-head">
+        <fieldset className="section" id="fiber_compositions-0">
+          <legend className="section-title">
+            <span className="num" aria-hidden="true">01</span>
             <h2>Faserzusammensetzung</h2>
-            <label className="check"><input type="checkbox" checked={includeFibers} onChange={(e) => setIncludeFibers(e.target.checked)} /> mitsenden</label>
-          </div>
+          </legend>
+          <label className="check">
+            <input type="checkbox" checked={includeFibers} onChange={(e) => setIncludeFibers(e.target.checked)} />
+            Abschnitt Faserzusammensetzung mitsenden
+          </label>
           {includeFibers && (
-            <div className="stack">
-              <label className="field"><span>Bauteil</span>
-                <select value={component} onChange={(e) => setComponent(e.target.value)}>
+            <div className="stack" style={{ marginTop: "0.75rem" }}>
+              <div className="field">
+                <label htmlFor="component">Bauteil</label>
+                <select id="component" value={component} onChange={(e) => setComponent(e.target.value)}>
                   <option value="main_fabric">Oberstoff</option><option value="lining">Futter</option><option value="rib_collar">Bündchen</option><option value="trim">Zutaten</option>
                 </select>
-              </label>
-              {fiberRows.map((row) => (
-                <div className="fiber-row" key={row.id}>
-                  <label className="field"><span>Faser</span>
-                    <select value={row.fiber} onChange={(e) => updateFiber(row.id, { fiber: e.target.value as FiberType })}>
-                      {(Object.keys(FIBER_LABELS) as FiberType[]).map((fiber) => <option key={fiber} value={fiber}>{FIBER_LABELS[fiber]}</option>)}
-                    </select>
-                  </label>
-                  {row.fiber === "other" && (
-                    <label className="field"><span>Bezeichnung</span><input value={row.otherName} onChange={(e) => updateFiber(row.id, { otherName: e.target.value })} required /></label>
-                  )}
-                  <label className="field"><span>Anteil %</span><input type="number" min="0.1" max="100" step="0.1" value={row.percentage} onChange={(e) => updateFiber(row.id, { percentage: e.target.value })} required /></label>
-                  <label className="field"><span>davon recycelt %</span><input type="number" min="0" max="100" step="1" value={row.recycled} onChange={(e) => updateFiber(row.id, { recycled: e.target.value })} /></label>
-                  <label className="field"><span>Rezyklat-Quelle</span>
-                    <select value={row.source} onChange={(e) => updateFiber(row.id, { source: e.target.value as RecycledSource | "" })}>
-                      <option value="">keine Angabe</option>
-                      {(Object.keys(RECYCLED_SOURCE_LABELS) as RecycledSource[]).map((source) => <option key={source} value={source}>{RECYCLED_SOURCE_LABELS[source]}</option>)}
-                    </select>
-                  </label>
-                  <label className="field"><span>Herkunft (ISO)</span><input value={row.origin} maxLength={2} placeholder="TR" onChange={(e) => updateFiber(row.id, { origin: e.target.value })} /></label>
-                  {certRows.length > 0 && (
-                    <label className="field"><span>Zertifikat</span>
-                      <select value={row.certificateId} onChange={(e) => updateFiber(row.id, { certificateId: e.target.value })}>
-                        <option value="">keines</option>
-                        {certRows.map((cert) => <option key={cert.id} value={cert.certificateId}>{CERTIFICATE_LABELS[cert.type]}{cert.number ? ` ${cert.number}` : ""}</option>)}
-                      </select>
-                    </label>
-                  )}
-                  {fiberRows.length > 1 && <button type="button" className="btn small remove" onClick={() => setFiberRows((rows) => rows.filter((r) => r.id !== row.id))}>Entfernen</button>}
-                </div>
-              ))}
-              <div className="row between">
-                <button type="button" className="btn small" onClick={() => setFiberRows((rows) => [...rows, { id: nextId(), fiber: "elastane", otherName: "", percentage: "", recycled: "0", source: "", origin: "", certificateId: "" }])}>Faser hinzufügen</button>
-                <span className={`chip ${fiberTotalOk ? "ok" : "danger"}`}>Summe {fiberTotal.toFixed(1)} %</span>
+              </div>
+              {fiberRows.map((row, index) => {
+                const base = `fiber_compositions-0-fibers-${index}`;
+                return (
+                  <fieldset className="subform" key={row.id} id={base}>
+                    <legend>Faser {index + 1}</legend>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label htmlFor={`${base}-fiber`}>Faser</label>
+                        <select id={`${base}-fiber`} value={row.fiber} onChange={(e) => updateFiber(row.id, { fiber: e.target.value as FiberType })}>
+                          {(Object.keys(FIBER_LABELS) as FiberType[]).map((fiber) => <option key={fiber} value={fiber}>{FIBER_LABELS[fiber]}</option>)}
+                        </select>
+                      </div>
+                      {row.fiber === "other" && (
+                        <div className="field">
+                          <label htmlFor={`${base}-fiber_name_other`}>Bezeichnung (Pflicht)</label>
+                          <input id={`${base}-fiber_name_other`} value={row.otherName} onChange={(e) => updateFiber(row.id, { otherName: e.target.value })} required aria-invalid={invalid(`${base}-fiber_name_other`)} />
+                        </div>
+                      )}
+                      <div className="field">
+                        <label htmlFor={`${base}-percentage`}>Anteil in Prozent (Pflicht)</label>
+                        <input id={`${base}-percentage`} type="number" inputMode="decimal" min="0.1" max="100" step="0.1" value={row.percentage} onChange={(e) => updateFiber(row.id, { percentage: e.target.value })} required aria-invalid={invalid(`${base}-percentage`)} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`${base}-recycled_percentage`}>Davon recycelt in Prozent</label>
+                        <input id={`${base}-recycled_percentage`} type="number" inputMode="numeric" min="0" max="100" step="1" value={row.recycled} onChange={(e) => updateFiber(row.id, { recycled: e.target.value })} aria-invalid={invalid(`${base}-recycled_percentage`)} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`${base}-recycled_source`}>Quelle des Rezyklats</label>
+                        <select id={`${base}-recycled_source`} value={row.source} onChange={(e) => updateFiber(row.id, { source: e.target.value as RecycledSource | "" })}>
+                          <option value="">keine Angabe</option>
+                          {(Object.keys(RECYCLED_SOURCE_LABELS) as RecycledSource[]).map((source) => <option key={source} value={source}>{RECYCLED_SOURCE_LABELS[source]}</option>)}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`${base}-origin_country`}>Herkunftsland</label>
+                        <input id={`${base}-origin_country`} value={row.origin} maxLength={2} autoCapitalize="characters" aria-describedby={`${base}-origin-hint`} onChange={(e) => updateFiber(row.id, { origin: e.target.value })} aria-invalid={invalid(`${base}-origin_country`)} />
+                        <span className="field-hint" id={`${base}-origin-hint`}>Zwei Buchstaben nach ISO 3166, zum Beispiel TR</span>
+                      </div>
+                      {certRows.length > 0 && (
+                        <div className="field">
+                          <label htmlFor={`${base}-certificate_ids`}>Zugehöriges Zertifikat</label>
+                          <select id={`${base}-certificate_ids`} value={row.certificateId} onChange={(e) => updateFiber(row.id, { certificateId: e.target.value })}>
+                            <option value="">keines</option>
+                            {certRows.map((cert) => <option key={cert.id} value={cert.certificateId}>{CERTIFICATE_LABELS[cert.type]}{cert.number ? ` ${cert.number}` : ""}</option>)}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                    {fiberRows.length > 1 && (
+                      <div><button type="button" className="btn btn-quiet btn-small" onClick={() => setFiberRows((rows) => rows.filter((r) => r.id !== row.id))}>Faser {index + 1} entfernen</button></div>
+                    )}
+                  </fieldset>
+                );
+              })}
+              <div className="sum-line">
+                <button type="button" className="btn btn-quiet btn-small" onClick={() => setFiberRows((rows) => [...rows, { id: nextId(), fiber: "elastane", otherName: "", percentage: "", recycled: "0", source: "", origin: "", certificateId: "" }])}>Weitere Faser hinzufügen</button>
+                <span className={`status ${fiberTotalOk ? "status-ok" : "status-danger"}`} role="status">Summe {fiberTotal.toFixed(1)} %{fiberTotalOk ? "" : ", muss 100 % ergeben"}</span>
               </div>
             </div>
           )}
-        </section>
+        </fieldset>
       )}
 
       {allowed.has("chemical_compliance") && (
-        <section className="card">
-          <div className="card-head">
+        <fieldset className="section" id="chemical_compliance">
+          <legend className="section-title">
+            <span className="num" aria-hidden="true">02</span>
             <h2>Chemie und Stoffe</h2>
-            <label className="check"><input type="checkbox" checked={includeChemistry} onChange={(e) => setIncludeChemistry(e.target.checked)} /> mitsenden</label>
-          </div>
+          </legend>
+          <label className="check">
+            <input type="checkbox" checked={includeChemistry} onChange={(e) => setIncludeChemistry(e.target.checked)} />
+            Abschnitt Chemie und Stoffe mitsenden
+          </label>
           {includeChemistry && (
-            <div className="stack">
+            <div className="stack" style={{ marginTop: "0.75rem" }}>
               <label className="check"><input type="checkbox" checked={pfasFree} onChange={(e) => setPfasFree(e.target.checked)} /> Keine absichtlich zugesetzten PFAS (PFAS-frei)</label>
-              <label className="field"><span>PFAS-Erklärung (https-URL)</span><input type="url" value={pfasUrl} onChange={(e) => setPfasUrl(e.target.value)} placeholder="https://…/pfas.pdf" /></label>
-              <label className="check"><input type="checkbox" checked={svhcAbove} onChange={(e) => setSvhcAbove(e.target.checked)} /> Mindestens ein SVHC über 0,1 % w/w enthalten (REACH Art. 33)</label>
-              <label className="field"><span>REACH-Erklärung (https-URL)</span><input type="url" value={reachUrl} onChange={(e) => setReachUrl(e.target.value)} /></label>
-              <h3>Besorgniserregende Stoffe</h3>
-              {substances.map((row) => (
-                <div className="fiber-row" key={row.id}>
-                  <label className="field"><span>Stoff</span><input value={row.name} onChange={(e) => updateSubstance(row.id, { name: e.target.value })} required /></label>
-                  <label className="field"><span>CAS-Nummer</span><input value={row.cas} placeholder="335-67-1" onChange={(e) => updateSubstance(row.id, { cas: e.target.value })} /></label>
-                  <label className="field"><span>Konzentration %</span><input type="number" min="0" max="100" step="0.01" value={row.concentration} onChange={(e) => updateSubstance(row.id, { concentration: e.target.value })} required /></label>
-                  <label className="field"><span>Ort im Artikel</span><input value={row.location} placeholder="z. B. DWR-Ausrüstung" onChange={(e) => updateSubstance(row.id, { location: e.target.value })} /></label>
-                  <button type="button" className="btn small remove" onClick={() => setSubstances((rows) => rows.filter((r) => r.id !== row.id))}>Entfernen</button>
-                </div>
-              ))}
-              <div><button type="button" className="btn small" onClick={() => setSubstances((rows) => [...rows, { id: nextId(), name: "", cas: "", concentration: "", location: "" }])}>Stoff hinzufügen</button></div>
+              <div className="field">
+                <label htmlFor="chemical_compliance-pfas_declaration_url">PFAS-Erklärung als Link</label>
+                <input id="chemical_compliance-pfas_declaration_url" type="url" value={pfasUrl} onChange={(e) => setPfasUrl(e.target.value)} aria-describedby="pfas-hint" aria-invalid={invalid("chemical_compliance-pfas_declaration_url")} />
+                <span className="field-hint" id="pfas-hint">Nur https-Adressen, zum Beispiel https://ihr-betrieb.de/pfas.pdf</span>
+              </div>
+              <label className="check"><input type="checkbox" checked={svhcAbove} onChange={(e) => setSvhcAbove(e.target.checked)} /> Mindestens ein SVHC über 0,1 % enthalten (REACH Art. 33)</label>
+              <div className="field">
+                <label htmlFor="chemical_compliance-reach_declaration_url">REACH-Erklärung als Link</label>
+                <input id="chemical_compliance-reach_declaration_url" type="url" value={reachUrl} onChange={(e) => setReachUrl(e.target.value)} aria-invalid={invalid("chemical_compliance-reach_declaration_url")} />
+              </div>
+              <h3 style={{ marginTop: "0.5rem" }}>Besorgniserregende Stoffe</h3>
+              {substances.length === 0 && <p className="muted small">Keine Stoffe erfasst. Erfassen Sie jeden Stoff der REACH-Kandidatenliste, der im Artikel enthalten ist.</p>}
+              {substances.map((row, index) => {
+                const base = `chemical_compliance-substances_of_concern-${index}`;
+                return (
+                  <fieldset className="subform" key={row.id} id={base}>
+                    <legend>Stoff {index + 1}</legend>
+                    <div className="form-grid">
+                      <div className="field"><label htmlFor={`${base}-name`}>Stoffname (Pflicht)</label><input id={`${base}-name`} value={row.name} onChange={(e) => updateSubstance(row.id, { name: e.target.value })} required aria-invalid={invalid(`${base}-name`)} /></div>
+                      <div className="field"><label htmlFor={`${base}-cas_number`}>CAS-Nummer</label><input id={`${base}-cas_number`} value={row.cas} inputMode="numeric" aria-describedby={`${base}-cas-hint`} onChange={(e) => updateSubstance(row.id, { cas: e.target.value })} aria-invalid={invalid(`${base}-cas_number`)} /><span className="field-hint" id={`${base}-cas-hint`}>Format 335-67-1</span></div>
+                      <div className="field"><label htmlFor={`${base}-concentration_percent`}>Konzentration in Prozent (Pflicht)</label><input id={`${base}-concentration_percent`} type="number" inputMode="decimal" min="0" max="100" step="0.01" value={row.concentration} onChange={(e) => updateSubstance(row.id, { concentration: e.target.value })} required aria-invalid={invalid(`${base}-concentration_percent`)} /></div>
+                      <div className="field"><label htmlFor={`${base}-location`}>Ort im Artikel</label><input id={`${base}-location`} value={row.location} placeholder="z. B. DWR-Ausrüstung" onChange={(e) => updateSubstance(row.id, { location: e.target.value })} /></div>
+                    </div>
+                    <div><button type="button" className="btn btn-quiet btn-small" onClick={() => setSubstances((rows) => rows.filter((r) => r.id !== row.id))}>Stoff {index + 1} entfernen</button></div>
+                  </fieldset>
+                );
+              })}
+              <div><button type="button" className="btn btn-quiet btn-small" onClick={() => setSubstances((rows) => [...rows, { id: nextId(), name: "", cas: "", concentration: "", location: "" }])}>Stoff hinzufügen</button></div>
             </div>
           )}
-        </section>
+        </fieldset>
       )}
 
       {allowed.has("certificates") && (
-        <section className="card">
-          <div className="card-head">
+        <fieldset className="section" id="certificates">
+          <legend className="section-title">
+            <span className="num" aria-hidden="true">{allowed.has("chemical_compliance") ? "03" : "02"}</span>
             <h2>Zertifikate und Nachweise</h2>
-            <button type="button" className="btn small" onClick={addCert}>Hinzufügen</button>
-          </div>
+          </legend>
+            <div className="section-actions"><button type="button" className="btn btn-quiet btn-small" onClick={addCert}>Zertifikat hinzufügen</button></div>
+
           {certRows.length === 0 && <p className="muted small">Noch kein Zertifikat erfasst. GOTS, GRS, OEKO-TEX oder Prüfberichte stärken den Pass.</p>}
           <div className="stack">
-            {certRows.map((row) => (
-              <div className="fiber-row" key={row.id}>
-                <label className="field"><span>Typ</span>
-                  <select value={row.type} onChange={(e) => updateCert(row.id, { type: e.target.value as CertificateType })}>
-                    {(Object.keys(CERTIFICATE_LABELS) as CertificateType[]).map((type) => <option key={type} value={type}>{CERTIFICATE_LABELS[type]}</option>)}
-                  </select>
-                </label>
-                <label className="field"><span>Aussteller</span><input value={row.issuer} onChange={(e) => updateCert(row.id, { issuer: e.target.value })} required /></label>
-                <label className="field"><span>Nummer</span><input value={row.number} onChange={(e) => updateCert(row.id, { number: e.target.value })} /></label>
-                <label className="field"><span>Link (https)</span><input type="url" value={row.url} onChange={(e) => updateCert(row.id, { url: e.target.value })} /></label>
-                <label className="field"><span>Gültig von</span><input type="date" value={row.validFrom} onChange={(e) => updateCert(row.id, { validFrom: e.target.value })} /></label>
-                <label className="field"><span>Gültig bis</span><input type="date" value={row.validUntil} onChange={(e) => updateCert(row.id, { validUntil: e.target.value })} /></label>
-                <button type="button" className="btn small remove" onClick={() => setCertRows((rows) => rows.filter((r) => r.id !== row.id))}>Entfernen</button>
-              </div>
-            ))}
+            {certRows.map((row, index) => {
+              const base = `certificates-${index}`;
+              return (
+                <fieldset className="subform" key={row.id} id={base}>
+                  <legend>Zertifikat {index + 1}</legend>
+                  <div className="form-grid">
+                    <div className="field"><label htmlFor={`${base}-type`}>Typ</label>
+                      <select id={`${base}-type`} value={row.type} onChange={(e) => updateCert(row.id, { type: e.target.value as CertificateType })}>
+                        {(Object.keys(CERTIFICATE_LABELS) as CertificateType[]).map((type) => <option key={type} value={type}>{CERTIFICATE_LABELS[type]}</option>)}
+                      </select>
+                    </div>
+                    <div className="field"><label htmlFor={`${base}-issuer`}>Aussteller (Pflicht)</label><input id={`${base}-issuer`} value={row.issuer} onChange={(e) => updateCert(row.id, { issuer: e.target.value })} required aria-invalid={invalid(`${base}-issuer`)} /></div>
+                    <div className="field"><label htmlFor={`${base}-number`}>Nummer</label><input id={`${base}-number`} value={row.number} onChange={(e) => updateCert(row.id, { number: e.target.value })} /></div>
+                    <div className="field"><label htmlFor={`${base}-url`}>Link zum Nachweis</label><input id={`${base}-url`} type="url" value={row.url} onChange={(e) => updateCert(row.id, { url: e.target.value })} aria-invalid={invalid(`${base}-url`)} /></div>
+                    <div className="field"><label htmlFor={`${base}-valid_from`}>Gültig von</label><input id={`${base}-valid_from`} type="date" value={row.validFrom} onChange={(e) => updateCert(row.id, { validFrom: e.target.value })} /></div>
+                    <div className="field"><label htmlFor={`${base}-valid_until`}>Gültig bis</label><input id={`${base}-valid_until`} type="date" value={row.validUntil} onChange={(e) => updateCert(row.id, { validUntil: e.target.value })} aria-invalid={invalid(`${base}-valid_until`)} /></div>
+                  </div>
+                  <div><button type="button" className="btn btn-quiet btn-small" onClick={() => setCertRows((rows) => rows.filter((r) => r.id !== row.id))}>Zertifikat {index + 1} entfernen</button></div>
+                </fieldset>
+              );
+            })}
           </div>
-        </section>
+        </fieldset>
       )}
 
       {allowed.has("environmental_footprint") && (
-        <section className="card">
-          <div className="card-head">
+        <fieldset className="section" id="environmental_footprint">
+          <legend className="section-title">
+            <span className="num" aria-hidden="true">03</span>
             <h2>Umweltfußabdruck</h2>
-            <label className="check"><input type="checkbox" checked={includeFootprint} onChange={(e) => setIncludeFootprint(e.target.checked)} /> mitsenden</label>
-          </div>
+          </legend>
+          <label className="check">
+            <input type="checkbox" checked={includeFootprint} onChange={(e) => setIncludeFootprint(e.target.checked)} />
+            Abschnitt Umweltfußabdruck mitsenden
+          </label>
           {includeFootprint && (
-            <div className="form-grid">
-              <label className="field"><span>kg CO₂e pro Stück</span><input type="number" min="0" step="0.01" value={pcf} onChange={(e) => setPcf(e.target.value)} required /></label>
-              <label className="field"><span>Methode</span>
-                <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+            <div className="form-grid" style={{ marginTop: "0.75rem" }}>
+              <div className="field"><label htmlFor="environmental_footprint-pcf_kg_co2e">kg CO₂-Äquivalent pro Stück (Pflicht)</label><input id="environmental_footprint-pcf_kg_co2e" type="number" inputMode="decimal" min="0" step="0.01" value={pcf} onChange={(e) => setPcf(e.target.value)} required aria-invalid={invalid("environmental_footprint-pcf_kg_co2e")} /></div>
+              <div className="field"><label htmlFor="environmental_footprint-method">Methode</label>
+                <select id="environmental_footprint-method" value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
                   <option value="pef">EU PEF</option><option value="iso_14067">ISO 14067</option><option value="ghg_protocol_product">GHG Protocol</option><option value="other">Andere</option>
                 </select>
-              </label>
-              <label className="field"><span>Systemgrenze</span>
-                <select value={boundary} onChange={(e) => setBoundary(e.target.value as typeof boundary)}>
+              </div>
+              <div className="field"><label htmlFor="environmental_footprint-boundary">Systemgrenze</label>
+                <select id="environmental_footprint-boundary" value={boundary} onChange={(e) => setBoundary(e.target.value as typeof boundary)}>
                   <option value="cradle_to_gate">Cradle-to-Gate</option><option value="cradle_to_grave">Cradle-to-Grave</option>
                 </select>
-              </label>
-              <label className="field"><span>Bezugsjahr</span><input type="number" min="2015" max="2100" value={year} onChange={(e) => setYear(e.target.value)} required /></label>
-              <label className="field"><span>Wasser (Liter)</span><input type="number" min="0" value={water} onChange={(e) => setWater(e.target.value)} /></label>
+              </div>
+              <div className="field"><label htmlFor="environmental_footprint-reference_year">Bezugsjahr</label><input id="environmental_footprint-reference_year" type="number" inputMode="numeric" min="2015" max="2100" value={year} onChange={(e) => setYear(e.target.value)} required aria-invalid={invalid("environmental_footprint-reference_year")} /></div>
+              <div className="field"><label htmlFor="environmental_footprint-water_consumption_l">Wasserverbrauch in Litern</label><input id="environmental_footprint-water_consumption_l" type="number" inputMode="numeric" min="0" value={water} onChange={(e) => setWater(e.target.value)} /></div>
             </div>
           )}
-        </section>
+        </fieldset>
       )}
 
       {allowed.has("supplier_details") && (
-        <section className="card">
-          <div className="card-head">
+        <fieldset className="section" id="supplier_details">
+          <legend className="section-title">
+            <span className="num" aria-hidden="true">{allowed.has("environmental_footprint") ? "04" : allowed.has("chemical_compliance") ? "04" : "03"}</span>
             <h2>Betriebsdaten</h2>
-            <label className="check"><input type="checkbox" checked={includeDetails} onChange={(e) => setIncludeDetails(e.target.checked)} /> mitsenden</label>
-          </div>
+          </legend>
+          <label className="check">
+            <input type="checkbox" checked={includeDetails} onChange={(e) => setIncludeDetails(e.target.checked)} />
+            Abschnitt Betriebsdaten mitsenden
+          </label>
           {includeDetails && (
-            <div className="form-grid">
-              <label className="field"><span>Standort-GLN (13 Ziffern)</span><input value={facilityGln} inputMode="numeric" onChange={(e) => setFacilityGln(e.target.value)} /></label>
-              <label className="field"><span>Kontakt-E-Mail</span><input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} /></label>
+            <div className="form-grid" style={{ marginTop: "0.75rem" }}>
+              <div className="field"><label htmlFor="supplier_details-facility_gln">Standort-GLN</label><input id="supplier_details-facility_gln" value={facilityGln} inputMode="numeric" aria-describedby="gln-hint" onChange={(e) => setFacilityGln(e.target.value)} aria-invalid={invalid("supplier_details-facility_gln")} /><span className="field-hint" id="gln-hint">13 Ziffern, von GS1 vergeben</span></div>
+              <div className="field"><label htmlFor="supplier_details-contact_email">Kontakt-E-Mail</label><input id="supplier_details-contact_email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} aria-invalid={invalid("supplier_details-contact_email")} /></div>
             </div>
           )}
-        </section>
+        </fieldset>
       )}
 
-      <section className="card">
-        <label className="field"><span>Anmerkung für das Label (optional)</span><textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></label>
-        {error && <ErrorBox error={error} />}
-        <div className="row between" style={{ marginTop: 12 }}>
+      <div className="section">
+        <div className="field">
+          <label htmlFor="note">Anmerkung für das Label (optional)</label>
+          <textarea id="note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <div className="btn-row" style={{ marginTop: "1.25rem", justifyContent: "space-between" }}>
           <span className="small muted">Jede Übermittlung wird mit Zeitstempel und Prüfsumme protokolliert.</span>
-          <button className="btn primary" type="submit" disabled={submitting || (includeFibers && !fiberTotalOk)}>
-            {submitting ? "Wird gesendet …" : "An das Label übermitteln"}
+          <button className="btn btn-primary btn-arrow" type="submit" disabled={submitting || (includeFibers && !fiberTotalOk)} aria-busy={submitting}>
+            {submitting ? "Wird gesendet" : "An das Label übermitteln"}
           </button>
         </div>
-      </section>
+      </div>
     </form>
   );
 }
 
-function ErrorBox({ error }: { error: ApiError | Error }) {
+function ErrorSummary({ error }: { error: ApiError | Error }) {
   if (error instanceof ApiError) {
     if (error.status === 422 && error.issues.length > 0) {
       return (
-        <div className="alert danger" style={{ marginTop: 10 }}>
-          Die Angaben entsprechen nicht dem Pass-Schema:
-          <ul>{error.issues.map((issue, index) => <li key={index}><code>{issue.loc.filter((p) => p !== "body").join(".")}</code>: {issue.msg}</li>)}</ul>
-        </div>
+        <>
+          <strong>Die Übermittlung wurde abgelehnt. Bitte die folgenden Angaben prüfen:</strong>
+          <ul>
+            {error.issues.map((issue, index) => {
+              const id = fieldIdFor(issue.loc);
+              const path = issue.loc.filter((p) => p !== "body").join(" › ");
+              return (
+                <li key={index}>
+                  {id ? <a href={`#${id}`} onClick={(e) => { e.preventDefault(); document.getElementById(id)?.focus(); }}>{path}</a> : path}: {issue.msg}
+                </li>
+              );
+            })}
+          </ul>
+        </>
       );
     }
     if (error.status === 403) {
-      return <div className="alert danger" style={{ marginTop: 10 }}>{String(error.detail)}</div>;
+      return <><strong>Nicht erlaubt</strong>{String(error.detail)}</>;
     }
   }
-  return <div className="alert danger" style={{ marginTop: 10 }}>{error.message}</div>;
+  return <><strong>Übermittlung fehlgeschlagen</strong>{error.message}</>;
 }

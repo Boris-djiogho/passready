@@ -1,16 +1,17 @@
 /** Passport page: what a consumer (or recycler) sees after scanning the QR code. */
 
-import { useEffect, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import {
   ApiError,
   type ConsumerPassportView,
+  type PassportView,
   type RecyclerPassportView,
   type Role,
   resolvePassport,
-  type PassportView,
 } from "../api/client";
+import { countryName, usePageTitle } from "../lib/a11y";
 import {
   BOUNDARY_LABELS,
   CARE_LABELS,
@@ -25,25 +26,37 @@ import {
   formatPercent,
 } from "../lib/labels";
 
-type LoadState =
-  | { status: "loading" }
-  | { status: "error"; error: Error }
-  | { status: "ready"; view: PassportView };
+const TABS: { id: Role; label: string }[] = [
+  { id: "consumer", label: "Für Kundinnen und Kunden" },
+  { id: "recycler", label: "Für Recycler" },
+];
 
 export function PassportPage() {
   const { gtin = "", batch, serial } = useParams();
   const [role, setRole] = useState<Role>("consumer");
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [view, setView] = useState<PassportView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  usePageTitle(view ? view.product.name : "Produktpass");
 
+  // The previous view stays mounted while the next role loads, so keyboard focus on the
+  // tab list survives the switch and the page does not flicker.
   useEffect(() => {
     let cancelled = false;
-    setState({ status: "loading" });
+    setLoading(true);
+    setError(null);
     resolvePassport(gtin, batch, serial, role)
-      .then((view) => {
-        if (!cancelled) setState({ status: "ready", view });
+      .then((next) => {
+        if (!cancelled) setView(next);
       })
-      .catch((error: unknown) => {
-        if (!cancelled) setState({ status: "error", error: error instanceof Error ? error : new Error(String(error)) });
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setView(null);
+          setError(caught instanceof Error ? caught : new Error(String(caught)));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -51,40 +64,63 @@ export function PassportPage() {
   }, [gtin, batch, serial, role]);
 
   return (
-    <main className="page">
-      <div className="row between">
-        <p className="eyebrow">Digitaler Produktpass</p>
-        <div className="segmented" role="tablist" aria-label="Sicht wählen">
-          <button type="button" className={role === "consumer" ? "active" : ""} onClick={() => setRole("consumer")}>
-            Verbraucher
-          </button>
-          <button type="button" className={role === "recycler" ? "active" : ""} onClick={() => setRole("recycler")}>
-            Recycler
-          </button>
-        </div>
-      </div>
-
-      {state.status === "loading" && <div className="card empty">Pass wird geladen …</div>}
-      {state.status === "error" && <ErrorCard error={state.error} gtin={gtin} />}
-      {state.status === "ready" && state.view.role === "consumer" && <ConsumerView view={state.view} />}
-      {state.status === "ready" && state.view.role === "recycler" && <RecyclerView view={state.view} />}
+    <main id="main" tabIndex={-1} className="wrap">
+      <p className="eyebrow">Digitaler Produktpass</p>
+      {loading && !view && (
+        <p role="status" className="muted" style={{ marginTop: "1rem" }}>Pass wird geladen …</p>
+      )}
+      {error && <ErrorBlock error={error} gtin={gtin} />}
+      {view && (
+        <>
+          <PassHeader view={view} />
+          <RoleTabs role={role} onChange={setRole} />
+          <div role="tabpanel" id={`panel-${view.role}`} aria-labelledby={`tab-${view.role}`} aria-busy={loading}>
+            {view.role === "consumer" ? <ConsumerSections view={view} /> : <RecyclerSections view={view} />}
+          </div>
+          <PassFooter view={view} />
+        </>
+      )}
     </main>
   );
 }
 
-function HeroImage({ src, alt }: { src: string; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return null;
-  return <img className="hero-image" src={src} alt={alt} onError={() => setFailed(true)} />;
+function RoleTabs({ role, onChange }: { role: Role; onChange: (role: Role) => void }) {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const index = TABS.findIndex((tab) => tab.id === role);
+    const next = TABS[(index + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+    onChange(next.id);
+    requestAnimationFrame(() => document.getElementById(`tab-${next.id}`)?.focus());
+  };
+  return (
+    <div role="tablist" aria-label="Sicht auf den Pass" className="tabs" onKeyDown={onKeyDown}>
+      {TABS.map((tab) => (
+        <button
+          key={tab.id}
+          id={`tab-${tab.id}`}
+          role="tab"
+          type="button"
+          className="tab"
+          aria-selected={role === tab.id}
+          aria-controls={`panel-${tab.id}`}
+          tabIndex={role === tab.id ? 0 : -1}
+          onClick={() => onChange(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-function ErrorCard({ error, gtin }: { error: Error; gtin: string }) {
+function ErrorBlock({ error, gtin }: { error: Error; gtin: string }) {
   let title = "Pass konnte nicht geladen werden";
   let text = error.message;
   if (error instanceof ApiError) {
     if (error.code === "passport_not_published") {
       title = "Dieser Pass ist noch nicht veröffentlicht";
-      text = "Das Label sammelt noch Daten bei seinen Lieferanten. Bitte später erneut scannen.";
+      text = "Das Label sammelt noch Daten bei seinen Lieferanten. Bitte den Code später erneut scannen.";
     } else if (error.code === "passport_not_found") {
       title = "Kein Produktpass hinterlegt";
       text = `Für die GTIN ${gtin} liegt kein Digitaler Produktpass vor.`;
@@ -93,202 +129,246 @@ function ErrorCard({ error, gtin }: { error: Error; gtin: string }) {
     }
   }
   return (
-    <section className="card">
-      <h2>{title}</h2>
-      <p className="muted">{text}</p>
+    <section role="alert" aria-labelledby="err-title" style={{ marginTop: "1rem" }}>
+      <h1 id="err-title" className="display">{title}</h1>
+      <p className="lede">{text}</p>
     </section>
   );
 }
 
-function Header({ view, brandName, category, country }: { view: PassportView; brandName: string; category: string; country: string | null | undefined }) {
+function PassHeader({ view }: { view: PassportView }) {
   const { identifier, resolution } = view;
+  const product = view.product;
+  const brandName = view.role === "consumer" ? view.brand.name : view.brand_name;
+  const country = view.role === "consumer" ? view.product.country_of_origin : null;
+  const image = view.role === "consumer" ? view.product.image_urls[0] : undefined;
   const published = view.status === "published";
   return (
-    <section className="card">
-      <div className="row between">
-        <span className="chip accent">{category}</span>
-        <span className={`chip ${published ? "ok" : "warn"}`}>{STATUS_LABELS[view.status]}</span>
-      </div>
-      <h1 className="hero-title">{"product" in view ? view.product.name : ""}</h1>
-      <p className="muted">
-        {brandName}
-        {country ? ` · hergestellt in ${country}` : ""}
+    <header className="pass-head">
+      <h1 className="display">{product.name}</h1>
+      <p className="lede">
+        {brandName} · {CATEGORY_LABELS[product.category]}
+        {country ? ` · hergestellt in ${countryName(country)}` : ""}
       </p>
-      <dl className="kv" style={{ marginTop: 12 }}>
+      {image && <HeroImage src={image} alt="" />}
+      <dl className="facts">
         <dt>GTIN</dt>
         <dd><code>{identifier.gtin}</code></dd>
         {identifier.batch && (<><dt>Charge</dt><dd><code>{identifier.batch}</code></dd></>)}
         {identifier.serial && (<><dt>Seriennummer</dt><dd><code>{identifier.serial}</code></dd></>)}
+        <dt>Status</dt>
+        <dd><span className={`status ${published ? "status-ok" : "status-warn"}`}>{STATUS_LABELS[view.status]}</span></dd>
       </dl>
       {resolution.fallback && (
-        <p className="alert warn small" style={{ marginTop: 12 }}>
-          Für {resolution.requested_serial ? `Seriennummer ${resolution.requested_serial}` : `Charge ${resolution.requested_batch}`} liegt
-          kein eigener Pass vor. Angezeigt wird der Pass der {resolution.served_granularity === "batch" ? "Charge" : "Modellebene"}.
+        <p className="notice notice-warn" style={{ marginTop: "1rem" }}>
+          Für {resolution.requested_serial ? `die Seriennummer ${resolution.requested_serial}` : `die Charge ${resolution.requested_batch}`} gibt es
+          keinen eigenen Pass. Angezeigt werden die Angaben {resolution.served_granularity === "batch" ? "der Charge" : "des Modells"}.
         </p>
       )}
+    </header>
+  );
+}
+
+function HeroImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return <img className="pass-image" src={src} alt={alt} onError={() => setFailed(true)} />;
+}
+
+function Section({ num, title, id, children }: { num: string; title: string; id: string; children: ReactNode }) {
+  return (
+    <section className="section" aria-labelledby={`h-${id}`}>
+      <div className="section-title">
+        <span className="num" aria-hidden="true">{num}</span>
+        <h2 id={`h-${id}`}>{title}</h2>
+      </div>
+      {children}
     </section>
   );
 }
 
-function ConsumerView({ view }: { view: ConsumerPassportView }) {
-  const { product, brand, composition, care, environment, chemistry, certificates, end_of_life } = view;
+interface FiberShare { label: string; percentage: number; recycled: number; note?: string }
+
+function CompositionBar({ fibers }: { fibers: FiberShare[] }) {
+  const description = fibers.map((f) => `${f.label} ${formatPercent(f.percentage)}`).join(", ");
   return (
     <>
-      {product.image_urls[0] && <HeroImage src={product.image_urls[0]} alt={product.name} />}
-      <Header view={view} brandName={brand.name} category={CATEGORY_LABELS[product.category]} country={product.country_of_origin} />
-      {product.description && (
-        <section className="card soft"><p>{product.description}</p></section>
-      )}
-
-      <section className="card">
-        <h2>Material</h2>
-        <div className="stack">
-          {composition.map((part) => (
-            <div key={part.component} className="stack">
-              {composition.length > 1 && <h3>{componentLabel(part.component)}</h3>}
-              {part.fibers.map((fiber) => (
-                <div className="fiber" key={`${part.component}-${fiber.fiber}-${fiber.label}`}>
-                  <div className="fiber-line">
-                    <span>
-                      {FIBER_LABELS[fiber.fiber] === "Sonstige Faser" ? fiber.label : FIBER_LABELS[fiber.fiber]}
-                      {fiber.recycled_percentage > 0 && (
-                        <span className="chip ok" style={{ marginLeft: 8 }}>{formatPercent(fiber.recycled_percentage)} recycelt</span>
-                      )}
-                    </span>
-                    <strong>{formatPercent(fiber.percentage)}</strong>
-                  </div>
-                  <div className="bar"><span style={{ width: `${fiber.percentage}%` }} /></div>
-                </div>
-              ))}
-              <p className="small muted">Rezyklatanteil gesamt: {formatPercent(part.total_recycled_percentage)}</p>
-            </div>
-          ))}
-          {composition.length === 0 && <p className="muted">Keine Materialangaben hinterlegt.</p>}
-        </div>
-      </section>
-
-      {chemistry && (
-        <section className="card">
-          <h2>Chemie und Stoffe</h2>
-          <div className="row">
-            <span className={`chip ${chemistry.contains_substances_of_concern ? "warn" : "ok"}`}>
-              {chemistry.contains_substances_of_concern ? "Besorgniserregende Stoffe enthalten" : "Keine besorgniserregenden Stoffe"}
-            </span>
-            <span className={`chip ${chemistry.pfas_free ? "ok" : "warn"}`}>{chemistry.pfas_free ? "PFAS-frei" : "Enthält PFAS"}</span>
-          </div>
-          {chemistry.substances.length > 0 && (
-            <p className="small muted" style={{ marginTop: 8 }}>Gemeldet: {chemistry.substances.join(", ")}</p>
-          )}
-        </section>
-      )}
-
-      {care && (
-        <section className="card">
-          <h2>Pflege und Reparatur</h2>
-          <div className="row">
-            {care.care_symbols.map((symbol) => <span key={symbol} className="chip">{CARE_LABELS[symbol]}</span>)}
-          </div>
-          {care.care_text && <p className="small muted" style={{ marginTop: 8 }}>{care.care_text}</p>}
-          {(care.repair_instructions_url || care.spare_parts_available !== null) && (
-            <dl className="kv" style={{ marginTop: 10 }}>
-              {care.repair_instructions_url && (<><dt>Reparatur</dt><dd><a href={care.repair_instructions_url}>Anleitung öffnen</a></dd></>)}
-              {care.spare_parts_available !== null && (<><dt>Ersatzteile</dt><dd>{care.spare_parts_available ? "verfügbar" : "nicht verfügbar"}</dd></>)}
-            </dl>
-          )}
-        </section>
-      )}
-
-      {environment && (
-        <section className="card">
-          <h2>Umweltfußabdruck</h2>
-          <div className="row between">
-            <span><strong style={{ fontSize: "1.4rem" }}>{environment.pcf_kg_co2e}</strong> kg CO₂e pro Stück</span>
-            <span className={`chip ${environment.verified ? "ok" : ""}`}>{environment.verified ? "verifiziert" : "Eigenangabe"}</span>
-          </div>
-          <p className="small muted" style={{ marginTop: 6 }}>
-            {METHOD_LABELS[environment.method]}, {BOUNDARY_LABELS[environment.boundary]}
-          </p>
-        </section>
-      )}
-
-      <Certificates certificates={certificates} />
-
-      {end_of_life && (
-        <section className="card">
-          <h2>Kreislauf</h2>
-          <dl className="kv">
-            {end_of_life.recyclable !== null && (<><dt>Recycelbar</dt><dd>{end_of_life.recyclable ? "ja" : "nein"}</dd></>)}
-            {end_of_life.recycling_notes && (<><dt>Hinweis</dt><dd>{end_of_life.recycling_notes}</dd></>)}
-            {end_of_life.take_back_program_url && (<><dt>Rücknahme</dt><dd><a href={end_of_life.take_back_program_url}>Zum Rücknahmeprogramm</a></dd></>)}
-          </dl>
-        </section>
-      )}
-
-      <Footer view={view} brandWebsite={brand.website} />
+      <div className="compbar" role="img" aria-label={`Zusammensetzung: ${description}`}>
+        {fibers.map((fiber, index) => (
+          <span key={index} className={`seg seg-${index % 6}`} style={{ flexBasis: `${fiber.percentage}%` }} />
+        ))}
+      </div>
+      <ul className="legend">
+        {fibers.map((fiber, index) => (
+          <li key={index}>
+            <span className={`swatch seg-${index % 6}`} aria-hidden="true" />
+            <span>{fiber.label}</span>
+            <span className="legend-pct">{formatPercent(fiber.percentage)}</span>
+            {(fiber.recycled > 0 || fiber.note) && (
+              <span className="legend-note">
+                {fiber.recycled > 0 ? `davon ${formatPercent(fiber.recycled)} recycelt` : ""}
+                {fiber.recycled > 0 && fiber.note ? " · " : ""}
+                {fiber.note ?? ""}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </>
   );
 }
 
-function RecyclerView({ view }: { view: RecyclerPassportView }) {
+function ConsumerSections({ view }: { view: ConsumerPassportView }) {
+  const { product, composition, care, environment, chemistry, certificates, end_of_life } = view;
+  return (
+    <>
+      {product.description && <p className="lede" style={{ marginTop: "1.25rem" }}>{product.description}</p>}
+
+      <Section num="01" title="Material" id="material">
+        {composition.length === 0 && <p className="muted">Keine Materialangaben hinterlegt.</p>}
+        {composition.map((part) => (
+          <div key={part.component}>
+            {composition.length > 1 && <h3 className="part-title">{componentLabel(part.component)}</h3>}
+            <CompositionBar
+              fibers={part.fibers.map((fiber) => ({
+                label: fiber.fiber === "other" ? fiber.label : FIBER_LABELS[fiber.fiber],
+                percentage: fiber.percentage,
+                recycled: fiber.recycled_percentage,
+              }))}
+            />
+            <p className="small muted" style={{ marginTop: "0.5rem" }}>
+              Rezyklatanteil dieses Teils: {formatPercent(part.total_recycled_percentage)}
+            </p>
+          </div>
+        ))}
+      </Section>
+
+      {chemistry && (
+        <Section num="02" title="Chemie und Stoffe" id="chemistry">
+          <ul className="status-list">
+            <li>
+              <span className={`status ${chemistry.contains_substances_of_concern ? "status-warn" : "status-ok"}`}>
+                {chemistry.contains_substances_of_concern
+                  ? "Enthält besorgniserregende Stoffe"
+                  : "Keine besorgniserregenden Stoffe gemeldet"}
+              </span>
+            </li>
+            <li>
+              <span className={`status ${chemistry.pfas_free ? "status-ok" : "status-warn"}`}>
+                {chemistry.pfas_free ? "Ohne absichtlich zugesetzte PFAS" : "Enthält PFAS"}
+              </span>
+            </li>
+          </ul>
+          {chemistry.substances.length > 0 && (
+            <p className="small muted" style={{ marginTop: "0.75rem" }}>Gemeldet: {chemistry.substances.join(", ")}</p>
+          )}
+        </Section>
+      )}
+
+      {care && (
+        <Section num="03" title="Pflege und Reparatur" id="care">
+          {care.care_symbols.length > 0 && (
+            <ul className="status-list" aria-label="Pflegehinweise">
+              {care.care_symbols.map((symbol) => <li key={symbol}>{CARE_LABELS[symbol]}</li>)}
+            </ul>
+          )}
+          {care.care_text && <p className="muted" style={{ marginTop: "0.75rem" }}>{care.care_text}</p>}
+          {(care.repair_instructions_url || care.spare_parts_available !== null) && (
+            <dl className="kv" style={{ marginTop: "1rem" }}>
+              {care.repair_instructions_url && (
+                <><dt>Reparatur</dt><dd><a href={care.repair_instructions_url}>Reparaturanleitung öffnen</a></dd></>
+              )}
+              {care.spare_parts_available !== null && (
+                <><dt>Ersatzteile</dt><dd>{care.spare_parts_available ? "verfügbar" : "nicht verfügbar"}</dd></>
+              )}
+            </dl>
+          )}
+        </Section>
+      )}
+
+      {environment && (
+        <Section num="04" title="Umweltfußabdruck" id="environment">
+          <p>
+            <strong style={{ fontSize: "1.5rem", fontFamily: "var(--serif)", fontWeight: 500 }}>{environment.pcf_kg_co2e}</strong>
+            {" "}kg CO₂-Äquivalent pro Stück
+          </p>
+          <p className="small muted" style={{ marginTop: "0.25rem" }}>
+            {METHOD_LABELS[environment.method]}, {BOUNDARY_LABELS[environment.boundary]},{" "}
+            {environment.verified ? "von Dritten verifiziert" : "Eigenangabe des Labels"}
+          </p>
+        </Section>
+      )}
+
+      <CertificateSection num="05" certificates={certificates} />
+
+      {end_of_life && (
+        <Section num="06" title="Kreislauf" id="eol">
+          <dl className="kv">
+            {end_of_life.recyclable !== null && (<><dt>Recycelbar</dt><dd>{end_of_life.recyclable ? "ja" : "nein"}</dd></>)}
+            {end_of_life.recycling_notes && (<><dt>Hinweis</dt><dd>{end_of_life.recycling_notes}</dd></>)}
+            {end_of_life.take_back_program_url && (
+              <><dt>Rücknahme</dt><dd><a href={end_of_life.take_back_program_url}>Zum Rücknahmeprogramm</a></dd></>
+            )}
+          </dl>
+        </Section>
+      )}
+    </>
+  );
+}
+
+function RecyclerSections({ view }: { view: RecyclerPassportView }) {
   const { product, compositions, substances_of_concern, pfas_free, end_of_life, certificates } = view;
   return (
     <>
-      <Header view={view} brandName={view.brand_name} category={CATEGORY_LABELS[product.category]} country={null} />
-      <section className="card">
-        <h2>Produkt</h2>
+      <Section num="01" title="Produkt" id="product">
         <dl className="kv">
           {product.weight_g !== null && (<><dt>Gewicht</dt><dd>{product.weight_g} g</dd></>)}
           <dt>Monomaterial</dt>
           <dd>{product.mono_material === null ? "keine Angabe" : product.mono_material ? "ja" : "nein"}</dd>
         </dl>
-      </section>
+      </Section>
 
-      <section className="card">
-        <h2>Faserzusammensetzung</h2>
-        <div className="table-wrap">
-          <table className="table">
-            <thead><tr><th>Teil</th><th>Faser</th><th>Anteil</th><th>Rezyklat</th><th>Herkunft</th></tr></thead>
-            <tbody>
-              {compositions.flatMap((part) =>
-                part.fibers.map((fiber, index) => (
-                  <tr key={`${part.component}-${index}`}>
-                    <td>{componentLabel(part.component)}</td>
-                    <td>{fiber.fiber === "other" ? fiber.fiber_name_other : FIBER_LABELS[fiber.fiber]}</td>
-                    <td>{formatPercent(fiber.percentage)}</td>
-                    <td>
-                      {fiber.recycled_percentage > 0
-                        ? `${formatPercent(fiber.recycled_percentage)}${fiber.recycled_source ? ` (${RECYCLED_SOURCE_LABELS[fiber.recycled_source]})` : ""}`
-                        : "–"}
-                    </td>
-                    <td>{fiber.origin_country ?? "–"}</td>
-                  </tr>
-                )),
-              )}
-            </tbody>
-          </table>
-        </div>
+      <Section num="02" title="Faserzusammensetzung" id="fibres">
         {compositions.length === 0 && <p className="muted">Keine Materialangaben hinterlegt.</p>}
-      </section>
+        {compositions.map((part) => (
+          <div key={part.component}>
+            {compositions.length > 1 && <h3 className="part-title">{componentLabel(part.component)}</h3>}
+            <CompositionBar
+              fibers={part.fibers.map((fiber) => ({
+                label: fiber.fiber === "other" ? (fiber.fiber_name_other ?? "Sonstige Faser") : FIBER_LABELS[fiber.fiber],
+                percentage: fiber.percentage,
+                recycled: fiber.recycled_percentage,
+                note: [
+                  fiber.recycled_source ? RECYCLED_SOURCE_LABELS[fiber.recycled_source] : null,
+                  fiber.origin_country ? `Herkunft ${countryName(fiber.origin_country)}` : null,
+                ].filter(Boolean).join(", ") || undefined,
+              }))}
+            />
+          </div>
+        ))}
+      </Section>
 
-      <section className="card">
-        <h2>Besorgniserregende Stoffe</h2>
-        <div className="row" style={{ marginBottom: 8 }}>
-          <span className={`chip ${pfas_free === false ? "warn" : pfas_free ? "ok" : ""}`}>
-            {pfas_free === null ? "PFAS: keine Angabe" : pfas_free ? "PFAS-frei" : "Enthält PFAS"}
+      <Section num="03" title="Besorgniserregende Stoffe" id="substances">
+        <p style={{ marginBottom: "0.75rem" }}>
+          <span className={`status ${pfas_free === false ? "status-warn" : pfas_free ? "status-ok" : "status-neutral"}`}>
+            {pfas_free === null ? "PFAS: keine Angabe" : pfas_free ? "Ohne absichtlich zugesetzte PFAS" : "Enthält PFAS"}
           </span>
-        </div>
+        </p>
         {substances_of_concern.length === 0 ? (
-          <p className="muted">Keine Stoffe über der Meldeschwelle (REACH Art. 33, 0,1 % w/w).</p>
+          <p className="muted">Keine Stoffe über der Meldeschwelle von 0,1 % (REACH Art. 33).</p>
         ) : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Stoff</th><th>CAS</th><th>Konz.</th><th>Ort</th></tr></thead>
+              <caption>Gemeldete Stoffe mit CAS-Nummer, Konzentration und Ort im Artikel</caption>
+              <thead>
+                <tr><th scope="col">Stoff</th><th scope="col">CAS</th><th scope="col" className="num">Konz.</th><th scope="col">Ort</th></tr>
+              </thead>
               <tbody>
                 {substances_of_concern.map((substance, index) => (
                   <tr key={index}>
                     <td>{substance.name}</td>
                     <td><code>{substance.cas_number ?? "–"}</code></td>
-                    <td>{substance.concentration_percent} %</td>
+                    <td className="num">{substance.concentration_percent} %</td>
                     <td>{substance.location ?? "–"}</td>
                   </tr>
                 ))}
@@ -296,59 +376,62 @@ function RecyclerView({ view }: { view: RecyclerPassportView }) {
             </table>
           </div>
         )}
-      </section>
+      </Section>
 
       {end_of_life && (
-        <section className="card">
-          <h2>Demontage und Recycling</h2>
+        <Section num="04" title="Demontage und Recycling" id="disassembly">
           <dl className="kv">
             {end_of_life.recyclable !== null && (<><dt>Recycelbar</dt><dd>{end_of_life.recyclable ? "ja" : "nein"}</dd></>)}
             {end_of_life.disassembly_instructions && (<><dt>Demontage</dt><dd>{end_of_life.disassembly_instructions}</dd></>)}
             {end_of_life.recycling_notes && (<><dt>Hinweis</dt><dd>{end_of_life.recycling_notes}</dd></>)}
           </dl>
-        </section>
+        </Section>
       )}
 
-      <Certificates certificates={certificates} />
-      <Footer view={view} brandWebsite={null} />
+      <CertificateSection num="05" certificates={certificates} />
     </>
   );
 }
 
-function Certificates({ certificates }: { certificates: PassportView["certificates"] }) {
+function CertificateSection({ num, certificates }: { num: string; certificates: PassportView["certificates"] }) {
   if (certificates.length === 0) return null;
   return (
-    <section className="card">
-      <h2>Zertifikate</h2>
-      <ul className="list">
-        {certificates.map((certificate, index) => (
-          <li key={index}>
-            <div>
-              <strong>{CERTIFICATE_LABELS[certificate.type]}</strong>
-              <div className="small muted">
-                {certificate.issuer}
-                {certificate.valid_until ? ` · gültig bis ${formatDate(certificate.valid_until)}` : ""}
-              </div>
-            </div>
-            {certificate.url && <a className="btn small" href={certificate.url}>Nachweis</a>}
-          </li>
-        ))}
+    <Section num={num} title="Zertifikate und Nachweise" id="certificates">
+      <ul className="link-list">
+        {certificates.map((certificate, index) => {
+          const label = CERTIFICATE_LABELS[certificate.type];
+          const meta = `${certificate.issuer}${certificate.valid_until ? `, gültig bis ${formatDate(certificate.valid_until)}` : ""}`;
+          return (
+            <li key={index}>
+              {certificate.url ? (
+                <a href={certificate.url} aria-label={`Nachweis öffnen: ${label}, ${meta}`}>
+                  <span><span className="link-title">{label}</span><span className="link-meta">{meta}</span></span>
+                </a>
+              ) : (
+                <div style={{ padding: "0.9rem 0" }}>
+                  <span className="link-title">{label}</span><span className="link-meta">{meta}</span>
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
-    </section>
+    </Section>
   );
 }
 
-function Footer({ view, brandWebsite }: { view: PassportView; brandWebsite: string | null }) {
-  const publishedAt = "published_at" in view ? view.published_at : null;
+function PassFooter({ view }: { view: PassportView }) {
+  const publishedAt = view.role === "consumer" ? view.published_at : null;
+  const website = view.role === "consumer" ? view.brand.website : null;
   return (
-    <p className="footer-note">
-      Version {view.version}
-      {publishedAt ? `, veröffentlicht am ${formatDate(publishedAt)}` : ""}
-      {brandWebsite ? <> · <a href={brandWebsite}>Website des Labels</a></> : null}
-      <br />
-      <code className="tiny">{view.identifier.digital_link}</code>
-      <br />
-      Daten nach EU-Ökodesign-Verordnung (ESPR), bereitgestellt über GS1 Digital Link.
-    </p>
+    <footer className="pass-foot">
+      <p>
+        Version {view.version}
+        {publishedAt ? `, veröffentlicht am ${formatDate(publishedAt)}` : ""}
+        {website ? <> · <a href={website}>Website des Labels</a></> : null}
+      </p>
+      <p>Adresse des Passes: <code>{view.identifier.digital_link}</code></p>
+      <p>Angaben nach der EU-Ökodesign-Verordnung (ESPR), erreichbar über GS1 Digital Link.</p>
+    </footer>
   );
 }

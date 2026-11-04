@@ -17,7 +17,9 @@ Was das Backend kann:
   wird mit SHA-256 protokolliert, das Aggregat wird komplett re-validiert.
 - **Brand-API**: Pass anlegen, Lieferanten einladen, Lückenbericht, Chemie-Check, Publish.
 - **Frontend** (`frontend/`, Vite + React + TypeScript): Pass-Ansicht als Ziel des QR-Codes
-  mit Umschalter Verbraucher/Recycler, Lieferantenformular per Token-Link, Brand-Dashboard.
+  mit Tabs Kundinnen/Recycler, Lieferantenformular per Token-Link, Label-Dashboard.
+  Editoriales Design ohne Komponenten-Framework, hell und dunkel, WCAG 2.2 AA (axe-core
+  ohne Verstöße, Kontraste mindestens 4,5:1, vollständig per Tastatur bedienbar).
 
 Normen und Rechtsgrundlagen pro Feld und Endpunkt: [docs/normen-mapping.md](docs/normen-mapping.md).
 

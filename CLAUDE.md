@@ -36,7 +36,7 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
 - Konfiguration über `PASSREADY_*`-Variablen (`.env.example`). Demo-Keys:
   Brand `demo-brand-key`, Behörde `demo-authority-key`.
 - **Frontend**: Vite + React 18 + TypeScript (`frontend/`), kein CSS-Framework, Design-
-  Tokens handgeschrieben in `src/index.css` (hell/dunkel, mobile-first 375 px).
+  System handgeschrieben in `src/index.css` (hell/dunkel, mobile-first 375 px).
   ```bash
   export PATH="/usr/local/opt/node@20/bin:$PATH"
   cd frontend && npm run typecheck && npm run build
@@ -105,18 +105,41 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   `recycled_percentage`), Felder mit `default_factory` optional (`suppliers`,
   `contributions`); beim Rendern `?? []`. Lange Strings (Digital Link) brauchen
   `overflow-wrap: anywhere`, Grid-Kinder `min-width: 0`, sonst läuft 375 px über.
+- **Design-Richtung (Referenz arianee.com, keine KI-Template-Optik)**: editorial statt
+  Kartenstapel. Eyebrow in Versalien, Display-Titel in Serif (`.display`), nummerierte
+  Abschnitte (`.section` + `.section-title` mit `.num`), Haarlinien statt Rahmen, eine
+  Akzentfarbe, Pfeile als Link-Signal (`.link-list`, `.btn-arrow`), Pillen-Buttons mit
+  44 px Höhe. Keine bunten Chips: Status immer als Text mit Glyph (`.status-ok|warn|
+  danger|neutral`), nie nur über Farbe. Keine Schatten, keine Emojis, keine Icon-Libs.
+- **WCAG 2.2 AA ist Pflicht und wird geprüft**: Skip-Link, `<main id="main" tabIndex=-1>`
+  pro Seite (Fokus nach Routenwechsel über `useFocusMainOnNavigate`), `usePageTitle`,
+  `:focus-visible`-Ring 3 px, Tabs mit `role=tab`/`aria-selected`/Pfeiltasten, Formulare
+  mit `fieldset`/`legend`, jedes Feld mit `<label htmlFor>`, Hinweise per
+  `aria-describedby`, 422-Fehler als `role=alert`-Zusammenfassung mit Links zu den
+  Feldern plus `aria-invalid`, Lade- und Erfolgszustände als `role=status`, Tabellen mit
+  `caption` und `scope`, Listen-Auswahl als `<button aria-current>`. Alle Text-Token gegen
+  ihre Flächen mindestens 4,5:1, Rahmen von Eingabefeldern mindestens 3:1 (Kontrast-
+  Rechnung siehe Session-Skript, bei neuen Farben wiederholen). Prüfung mit axe-core:
+  Vite serviert `/node_modules/axe-core/axe.min.js`; im Browser-Pane per `javascript_tool`
+  laden und `axe.run(document, {runOnly: {type: "tag", values: ["wcag2a", "wcag2aa",
+  "wcag21aa", "wcag22aa", "best-practice"]}})` auf jeder Seite ausführen; Stand 2026-11-04
+  null Verstöße auf Pass, Lieferantenformular und Dashboard.
+- Ländercodes nie roh anzeigen: `countryName()` (Intl.DisplayNames, de) in `lib/a11y.ts`.
 
 ## Stand
-v0.2.0 (2026-11-04): Backend-MVP (A: Pydantic-DPP-Schema Textil, B: Resolver mit
+v0.3.0 (2026-11-04): Backend-MVP (A: Pydantic-DPP-Schema Textil, B: Resolver mit
 Rollen-Routing, Fallback, Linkset, JSON-LD, Scan-Zählung, C: Supplier-Update mit Tokens,
 Abschnittsrechten, Audit-Trail; Brand-API mit Completeness, Chemie-Check, Publish; CORS)
-plus Frontend: Pass-Ansicht (Ziel des QR-Codes, Verbraucher/Recycler, Fallback- und
-Sperr-Zustände), Lieferantenformular per Token-Link, Brand-Dashboard (Liste, Score,
-Einladen mit Link, Chemie-Check, Publish, Protokoll). Kompletter Ablauf Weberei ->
-Färberei -> Dashboard -> Publish -> Verbraucher-Pass im Browser verifiziert. Backend
-48 Tests, ruff, mypy strict grün; Frontend tsc und vite build grün. Seed: T-Shirt
-`04012345678901` (Modell + Charge `LOT2026A`, veröffentlicht), Denim-Jacke
-`04012345000016` (wartet auf Weberei/Färberei, Tokens `demo-token-weaving-2026`,
-`demo-token-dyeing-2026`). Offen: PostgreSQL-Repository, echte Auth (JWT/OAuth2),
-QR-Code-Export, Versionsabruf-API (prEN 18222), EU-Registry-Anbindung (ESPR Art. 12),
-ECHA-Kandidatenliste als Import, Pass-Anlage im Dashboard, Frontend-Tests, Deploy.
+plus Frontend im editorialen Design (Referenz Arianee): Pass-Ansicht (Ziel des QR-Codes,
+Tabs Kundinnen/Recycler, Kompositionsbalken, Fallback- und Sperr-Zustände),
+Lieferantenformular per Token-Link (Fieldsets, Fehlerzusammenfassung), Label-Dashboard
+(Artikel, Vollständigkeit mit Progressbar, Einladen mit Link, Chemie-Check, Publish,
+Protokoll). WCAG 2.2 AA: axe-core null Verstöße auf allen Seiten, Kontraste gerechnet,
+Tastaturbedienung geprüft. Kompletter Ablauf Weberei -> Färberei -> Dashboard -> Publish
+-> Verbraucher-Pass im Browser verifiziert. Backend 48 Tests, ruff, mypy strict grün;
+Frontend tsc und vite build grün. Seed: T-Shirt `04012345678901` (Modell + Charge
+`LOT2026A`, veröffentlicht), Denim-Jacke `04012345000016` (wartet auf Weberei/Färberei,
+Tokens `demo-token-weaving-2026`, `demo-token-dyeing-2026`). Offen: PostgreSQL-
+Repository, echte Auth (JWT/OAuth2), QR-Code-Export, Versionsabruf-API (prEN 18222),
+EU-Registry-Anbindung (ESPR Art. 12), ECHA-Kandidatenliste als Import, Pass-Anlage im
+Dashboard, Frontend-Tests (axe in CI), Deployment.
