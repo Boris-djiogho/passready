@@ -24,7 +24,11 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   .venv/bin/mypy                        # Typen (strict, pydantic-Plugin)
   .venv/bin/uvicorn app.main:app --reload --port 8000   # Dev-Server, Swagger unter /docs
   ```
-- Dev-Server zum Verifizieren über die preview_*-Tools (Name „api", `.claude/launch.json`).
+- Dev-Server zum Verifizieren über die preview_*-Tools. Der Launcher liest die Konfiguration
+  aus dem Sitzungsordner: wird der Elternordner `Let's rumble` geöffnet, gilt dessen
+  `.claude/launch.json` (Name „passready-api", absolute Pfade, weil der Launcher relative
+  Binaries dort nicht ausführen darf); wird `passready/` direkt geöffnet, gilt die hiesige
+  `.claude/launch.json` (Name „api").
 - Datenbank: MVP läuft **in-memory**; Dokumente werden als `model_dump(mode="json")`
   gehalten, exakt das, was später in die JSONB-Spalte geht (`db/schema.sql`,
   `docker-compose.yml` mit PostgreSQL 16 auf Port 5434). Postgres-Repository ist noch
