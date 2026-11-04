@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         description="Shared secret that unlocks the 'authority' role on the resolver.",
     )
     supplier_token_ttl_days: int = Field(default=30, ge=1)
+    cors_origins: list[str] = Field(
+        default=["http://localhost:5173", "http://127.0.0.1:5173"],
+        description="Browser origins allowed to call the API directly (frontend hosts).",
+    )
     seed_demo_data: bool = True
     database_url: str | None = Field(
         default=None,

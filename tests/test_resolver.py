@@ -209,3 +209,18 @@ def test_well_known_resolver_description(client):
     body = response.json()
     assert body["supportedPrimaryKeys"] == ["01"]
     assert body["resolverRoot"] == RESOLVER_BASE
+
+
+def test_cors_allows_the_frontend_origin(client):
+    response = client.options(
+        f"/01/{DEMO_GTIN_TEE}",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-DPP-Role",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    plain = client.get(f"/01/{DEMO_GTIN_TEE}", headers={"Origin": "http://localhost:5173"})
+    assert "X-DPP-Granularity" in plain.headers["access-control-expose-headers"]

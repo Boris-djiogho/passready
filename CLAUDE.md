@@ -35,6 +35,20 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   nicht implementiert.
 - Konfiguration über `PASSREADY_*`-Variablen (`.env.example`). Demo-Keys:
   Brand `demo-brand-key`, Behörde `demo-authority-key`.
+- **Frontend**: Vite + React 18 + TypeScript (`frontend/`), kein CSS-Framework, Design-
+  Tokens handgeschrieben in `src/index.css` (hell/dunkel, mobile-first 375 px).
+  ```bash
+  export PATH="/usr/local/opt/node@20/bin:$PATH"
+  cd frontend && npm run typecheck && npm run build
+  npm run dev                      # Vite :5173, proxied /api und /resolver -> :8000
+  npm run gen:api                  # TS-Typen aus /openapi.json (Backend muss laufen)
+  ```
+  `src/api/schema.d.ts` ist generiert und eingecheckt; nach jeder Schema-Änderung im
+  Backend `gen:api` laufen lassen, sonst driftet der Vertrag.
+- Preview-Launcher: Der App-Launcher für `npm run dev` bleibt in einer App-seitigen
+  Bestätigung hängen (`Helpers/disclaimer`). Dann Vite per Bash im Hintergrund starten
+  (`npx vite --host 127.0.0.1 --port 5173 --strictPort`) und die Browser-Pane mit
+  `preview_start` auf die URL richten. Backend-Launcher „passready-api" funktioniert.
 
 ## Architektur-Landkarte
 - `app/core/`: `gs1.py` (GTIN-Prüfziffer, AI (10)/(21)-Zeichensatz, Digital-Link-URI),
@@ -55,6 +69,15 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   `/.well-known/gs1resolver`), `supplier.py` (`POST /api/dpp/{gtin}/supplier-update`,
   ohne Brand-Key, Token im Header `X-Supplier-Token`), `dpp.py` (Brand-API, Header
   `X-API-Key`), `health.py`.
+- `frontend/src/`: `api/client.ts` (typisierter Fetch-Client, `ApiError` mit
+  `issues`/`missing`), `lib/labels.ts` (deutsche Labels je Enum als `Record`, bricht den
+  Build bei neuen Enum-Werten), `pages/PassportPage.tsx` (Routen `/01/...` wie der GS1
+  Digital Link, Umschalter Verbraucher/Recycler), `pages/SupplierPage.tsx`
+  (`/supplier/:gtin?token=`, zeigt nur erlaubte Abschnitte und die Lücken der eigenen
+  Rolle), `pages/BrandPage.tsx` (`/brand`, Key in sessionStorage).
+- Das Frontend besitzt die Pfade `/01/...`; Resolver-Aufrufe gehen deshalb über
+  `/resolver/01/...` (Vite-Rewrite) bzw. `VITE_RESOLVER_BASE` in Produktion. Backend-CORS
+  über `PASSREADY_CORS_ORIGINS`.
 
 ## Konventionen / Fallstricke
 - **Strikte Typisierung**: alle gespeicherten Modelle erben `DppBaseModel`
@@ -78,15 +101,22 @@ Normen-Mapping: `docs/normen-mapping.md` (ESPR-Artikel, JTC-24-Normen, GS1 → C
   `app/services/seed.py` importieren, nicht hart kodieren.
 - E-Mail-Adressen in Seeds/Tests auf `*.example.org` (email-validator lehnt die
   TLD `.example` ab); https-URLs dürfen `.example` nutzen.
+- Frontend: Felder mit Default sind im generierten Typ Pflicht (`verified`, `public`,
+  `recycled_percentage`), Felder mit `default_factory` optional (`suppliers`,
+  `contributions`); beim Rendern `?? []`. Lange Strings (Digital Link) brauchen
+  `overflow-wrap: anywhere`, Grid-Kinder `min-width: 0`, sonst läuft 375 px über.
 
 ## Stand
-v0.1.0 (2026-11-04): MVP-Backend. Komponente A (Pydantic-DPP-Schema Textil),
-B (Resolver mit Rollen-Routing, Fallback, Linkset, JSON-LD, Scan-Zählung),
-C (Supplier-Update mit Tokens, Abschnittsrechten, Audit-Trail) plus Brand-API
-(anlegen, Lieferant einladen, Completeness, Chemie-Check, Publish). Seed: T-Shirt
+v0.2.0 (2026-11-04): Backend-MVP (A: Pydantic-DPP-Schema Textil, B: Resolver mit
+Rollen-Routing, Fallback, Linkset, JSON-LD, Scan-Zählung, C: Supplier-Update mit Tokens,
+Abschnittsrechten, Audit-Trail; Brand-API mit Completeness, Chemie-Check, Publish; CORS)
+plus Frontend: Pass-Ansicht (Ziel des QR-Codes, Verbraucher/Recycler, Fallback- und
+Sperr-Zustände), Lieferantenformular per Token-Link, Brand-Dashboard (Liste, Score,
+Einladen mit Link, Chemie-Check, Publish, Protokoll). Kompletter Ablauf Weberei ->
+Färberei -> Dashboard -> Publish -> Verbraucher-Pass im Browser verifiziert. Backend
+48 Tests, ruff, mypy strict grün; Frontend tsc und vite build grün. Seed: T-Shirt
 `04012345678901` (Modell + Charge `LOT2026A`, veröffentlicht), Denim-Jacke
 `04012345000016` (wartet auf Weberei/Färberei, Tokens `demo-token-weaving-2026`,
 `demo-token-dyeing-2026`). Offen: PostgreSQL-Repository, echte Auth (JWT/OAuth2),
 QR-Code-Export, Versionsabruf-API (prEN 18222), EU-Registry-Anbindung (ESPR Art. 12),
-ECHA-Kandidatenliste als Import statt Demo-Auszug, Frontend (Brand-Dashboard,
-Lieferantenformular, Pass-Landingpage).
+ECHA-Kandidatenliste als Import, Pass-Anlage im Dashboard, Frontend-Tests, Deploy.

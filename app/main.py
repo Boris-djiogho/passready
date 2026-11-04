@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -66,6 +67,13 @@ def create_app(
     )
     app.state.settings = settings
     app.state.repository = repository
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept", "X-API-Key", "X-DPP-Role", "X-Supplier-Token"],
+        expose_headers=["X-DPP-Role", "X-DPP-Granularity", "X-DPP-Fallback", "X-DPP-Version"],
+    )
     app.add_exception_handler(PassReadyError, _handle_domain_error)
     app.add_exception_handler(ValidationError, _handle_validation_error)
 

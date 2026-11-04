@@ -16,6 +16,8 @@ Was das Backend kann:
   Einladungs-Token; jede Lieferantenrolle darf nur ihre Abschnitte ändern, jede Änderung
   wird mit SHA-256 protokolliert, das Aggregat wird komplett re-validiert.
 - **Brand-API**: Pass anlegen, Lieferanten einladen, Lückenbericht, Chemie-Check, Publish.
+- **Frontend** (`frontend/`, Vite + React + TypeScript): Pass-Ansicht als Ziel des QR-Codes
+  mit Umschalter Verbraucher/Recycler, Lieferantenformular per Token-Link, Brand-Dashboard.
 
 Normen und Rechtsgrundlagen pro Feld und Endpunkt: [docs/normen-mapping.md](docs/normen-mapping.md).
 
@@ -30,6 +32,17 @@ python3.11 -m venv .venv
 
 Swagger-UI: <http://localhost:8000/docs>. Die App startet mit Demo-Daten (abschaltbar über
 `PASSREADY_SEED_DEMO_DATA=false`, alle Variablen in `.env.example`).
+
+Frontend (Node 20, Backend muss auf Port 8000 laufen):
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Dann <http://localhost:5173>: Startseite mit Links zu Demo-Pass, Lieferantenformularen und
+Dashboard. Vite proxied `/api` und `/resolver` auf das Backend. In Produktion zeigen
+`VITE_API_BASE` und `VITE_RESOLVER_BASE` auf die gehosteten Dienste, das Backend erlaubt den
+Frontend-Origin über `PASSREADY_CORS_ORIGINS`. Nach Schema-Änderungen `npm run gen:api`.
 
 ### Demo-Daten
 
@@ -108,6 +121,10 @@ app/
 db/schema.sql    PostgreSQL-Schema (JSONB, Versionshistorie, Tokens, Scan-Log)
 docs/            Normen-Mapping
 tests/           pytest (Resolver-Routing, Supplier-Flow, Modelle, GS1)
+frontend/src/
+  api/           generierte OpenAPI-Typen + typisierter Client
+  lib/           deutsche Labels für alle Enums
+  pages/         PassportPage (/01/...), SupplierPage (/supplier/:gtin), BrandPage (/brand)
 ```
 
 ## Qualität
@@ -122,5 +139,5 @@ tests/           pytest (Resolver-Routing, Supplier-Flow, Modelle, GS1)
 
 PostgreSQL-Repository auf Basis von `db/schema.sql`, echte Authentifizierung (OAuth2/JWT,
 Verifiable Credentials), QR-Code-Export für Etiketten, Versionsabruf-API, Anbindung an das
-EU-DPP-Register (ESPR Art. 12), ECHA-Kandidatenliste als Import, Frontend (Brand-Dashboard,
-Lieferantenformular, Pass-Landingpage).
+EU-DPP-Register (ESPR Art. 12), ECHA-Kandidatenliste als Import, Pass-Anlage im Dashboard,
+Frontend-Tests, Deployment.
