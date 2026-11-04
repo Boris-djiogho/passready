@@ -1,0 +1,18 @@
+# Optional: PostgreSQL 16 for the JSONB-backed repository (schema in db/schema.sql).
+# The default dev setup runs fully in memory and does not need Docker.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: passready-db
+    environment:
+      POSTGRES_DB: passready
+      POSTGRES_USER: passready
+      POSTGRES_PASSWORD: passready
+    ports:
+      - "5434:5432"
+    volumes:
+      - passready-db-data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+
+volumes:
+  passready-db-data:
